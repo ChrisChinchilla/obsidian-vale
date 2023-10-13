@@ -52,16 +52,7 @@ export const ValeApp = ({
       })
       .catch((err) => {
         if (err instanceof Error) {
-          if (err.message === "net::ERR_CONNECTION_REFUSED") {
-            checked(() =>
-              setReport({
-                ...report,
-                errors: (
-                  <ErrorMessage message={"Couldn't connect to Vale Server."} />
-                ),
-              })
-            );
-          } else if (
+           if (
             err.message === "Couldn't find vale" ||
             err.message === "Couldn't find config"
           ) {

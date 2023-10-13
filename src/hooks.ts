@@ -19,9 +19,7 @@ export const useConfigManager = (
   const app = useApp();
 
   return React.useMemo(() => {
-    if (settings.type === "server") {
-      return undefined;
-    }
+
 
     if (settings.cli.managed) {
       return newManagedConfigManager(app.vault);

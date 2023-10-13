@@ -1,5 +1,6 @@
 import { ItemView, MarkdownView, WorkspaceLeaf } from "obsidian";
 import * as React from "react";
+// TODO: Migrate
 import * as ReactDOM from "react-dom";
 import { ValeApp } from "./components/ValeApp";
 import { AppContext, SettingsContext } from "./context";
@@ -55,6 +56,7 @@ export class ValeView extends ItemView {
     });
 
     return timed("ValeResultsView.onOpen()", async () => {
+      // TODO: Migrate
       ReactDOM.render(
         <AppContext.Provider value={this.app}>
           <SettingsContext.Provider value={this.settings}>
@@ -77,11 +79,15 @@ export class ValeView extends ItemView {
     this.unregisterReady();
 
     return timed("ValeResultsView.onClose()", async () => {
+      // TODO: Migrate
+
       ReactDOM.unmountComponentAtNode(this.containerEl.children[1]);
     });
   }
 
   runValeCheck(): void {
+    // TODO: this should work
+    // TODO: What about non-markdown view?
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 
     // Only run the check if there's an active Markdown document and the view

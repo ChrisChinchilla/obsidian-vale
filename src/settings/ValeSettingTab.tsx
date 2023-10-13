@@ -14,6 +14,8 @@ export class ValeSettingTab extends PluginSettingTab {
   }
 
   display(): void {
+    // TODO: Migrate
+
     ReactDOM.render(
       <AppContext.Provider value={this.app}>
         <SettingsRouter plugin={this.plugin} />
@@ -23,6 +25,8 @@ export class ValeSettingTab extends PluginSettingTab {
   }
 
   hide(): void {
+    // TODO: Migrate
+
     ReactDOM.unmountComponentAtNode(this.containerEl);
   }
 }

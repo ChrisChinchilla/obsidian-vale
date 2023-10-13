@@ -29,42 +29,8 @@ export const GeneralSettings = ({
       if (ref.current) {
         ref.current.empty();
 
-        new Setting(ref.current)
-          .setName("Use Vale Server")
-          .setDesc("If disabled, you need to have the Vale CLI installed.")
-          .addToggle((toggle) =>
-            toggle
-              .setValue(settings.type === "server")
-              .onChange(async (value) => {
-                onSettingsChange({
-                  ...settings,
-                  type: value ? "server" : "cli",
-                });
-              })
-          );
 
-        if (settings.type === "server") {
-          new Setting(ref.current)
-            .setName("Server URL")
-            .setDesc("Address to a running Vale Server instance.")
-            .addText((text) => {
-              const component = text
-                .setValue(settings.server.url)
-                .setPlaceholder("http://localhost:7777");
 
-              component.inputEl.onblur = async (value) => {
-                onSettingsChange({
-                  ...settings,
-                  server: {
-                    ...settings.server,
-                    url: (value.currentTarget as any).value,
-                  },
-                });
-              };
-
-              return component;
-            });
-        } else {
           new Setting(ref.current)
             .setName("Use managed Vale CLI")
             .setDesc(
@@ -118,7 +84,7 @@ export const GeneralSettings = ({
                 return component;
               });
           }
-        }
+        
       }
     })();
   }, [settings]);

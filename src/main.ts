@@ -1,10 +1,12 @@
-import CodeMirror from "codemirror";
+// import CodeMirror from "codemirror";
 import { EventBus } from "EventBus";
 import {
   FileSystemAdapter,
   MarkdownView,
   normalizePath,
   Plugin,
+  Editor,
+  moment,
 } from "obsidian";
 import * as path from "path";
 import { ValeSettingTab } from "./settings/ValeSettingTab";
@@ -48,6 +50,7 @@ export default class ValePlugin extends Plugin {
         // a check may take some time to complete, the command only activates
         // the view and then asks the view to run the check. This lets us
         // display a progress bar while the check runs.
+        // console.log(editor, view);
         this.activateView();
       },
     });
@@ -78,8 +81,8 @@ export default class ValePlugin extends Plugin {
           this.settings,
           this.runner,
           this.eventBus,
-          this.onAlertClick
-        )
+          this.onAlertClick,
+        ),
     );
 
     this.registerDomEvent(document, "pointerup", this.onMarkerClick);
@@ -93,11 +96,12 @@ export default class ValePlugin extends Plugin {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_VALE);
 
     // Remove all marks from the previous check.
-    this.app.workspace.iterateCodeMirrors((cm) => {
-      cm.getAllMarks()
-        .filter((mark) => !!mark.className?.contains("vale-underline"))
-        .forEach((mark) => mark.clear());
-    });
+
+    // this.app.workspace.iterateCodeMirrors((cm) => {
+    //   cm.getAllMarks()
+    //     .filter((mark) => !!mark.className?.contains("vale-underline"))
+    //     .forEach((mark) => mark.clear());
+    // });
 
     this.unregisterAlerts();
   }
@@ -119,6 +123,8 @@ export default class ValePlugin extends Plugin {
 
       if (leaf.view instanceof ValeView) {
         console.log("vale view");
+        // console.log(view);
+
         leaf.view.runValeCheck();
       }
     });
@@ -144,7 +150,7 @@ export default class ValePlugin extends Plugin {
       } else {
         this.configManager = new ValeConfigManager(
           this.settings.cli.valePath!,
-          this.normalizeConfigPath(this.settings.cli.configPath!)
+          this.normalizeConfigPath(this.settings.cli.configPath!),
         );
       }
     }
@@ -160,14 +166,14 @@ export default class ValePlugin extends Plugin {
   newManagedConfigManager(): ValeConfigManager {
     const dataDir = path.join(
       this.app.vault.configDir,
-      "plugins/obsidian-vale/data"
+      "plugins/obsidian-vale/data",
     );
 
     const binaryName = process.platform === "win32" ? "vale.exe" : "vale";
 
     return new ValeConfigManager(
       this.normalizeConfigPath(path.join(dataDir, "bin", binaryName)),
-      this.normalizeConfigPath(path.join(dataDir, ".vale.ini"))
+      this.normalizeConfigPath(path.join(dataDir, ".vale.ini")),
     );
   }
 
@@ -210,7 +216,7 @@ export default class ValePlugin extends Plugin {
           {
             className: `vale-underline vale-${alert.Severity}`,
             clearOnEnter: false,
-          }
+          },
         );
 
         this.markers.set(marker, alert);
@@ -227,12 +233,12 @@ export default class ValePlugin extends Plugin {
           from: { line: alert.Line - 1, ch: alert.Span[0] - 1 },
           to: { line: alert.Line - 1, ch: alert.Span[1] },
         };
-
-        this.highlightRange(range);
+        // TODO: Refactor decorations
+        // this.highlightRange(range);
 
         editor.scrollIntoView(
           range.from,
-          editor.getScrollInfo().clientHeight / 2
+          editor.getScrollInfo().clientHeight / 2,
         );
 
         this.eventBus.dispatch("select-alert", alert);
@@ -249,21 +255,22 @@ export default class ValePlugin extends Plugin {
     }
 
     this.withCodeMirrorEditor((editor) => {
-      if (
-        e.target instanceof HTMLElement &&
-        !e.target.hasClass("vale-underline")
-      ) {
-        editor
-          .getAllMarks()
-          .filter(
-            (mark) => !!mark.className?.contains("vale-underline-highlight")
-          )
-          .forEach((mark) => mark.clear());
+      // TODO: Refactor decorations
+      // if (
+      //   e.target instanceof HTMLElement &&
+      //   !e.target.hasClass("vale-underline")
+      // ) {
+      //   editor
+      //     .getAllMarks()
+      //     .filter(
+      //       (mark) => !!mark.className?.contains("vale-underline-highlight")
+      //     )
+      //     .forEach((mark) => mark.clear());
 
-        this.eventBus.dispatch("deselect-alert", {});
+      //   this.eventBus.dispatch("deselect-alert", {});
 
-        return;
-      }
+      //   return;
+      // }
 
       if (!editor.getWrapperElement().contains(e.target as ChildNode)) {
         return;
@@ -279,8 +286,8 @@ export default class ValePlugin extends Plugin {
       const marker = markers[0];
 
       const range = marker.find() as CodeMirror.MarkerRange;
-
-      this.highlightRange(range);
+      //TODO: Refactor
+      // this.highlightRange(range);
 
       editor.setCursor(range.to);
 
@@ -290,31 +297,32 @@ export default class ValePlugin extends Plugin {
 
   // highlightRange creates a highlight marker after clearing any previous
   // highlight markers.
-  highlightRange(range: CodeMirror.MarkerRange): void {
-    this.withCodeMirrorEditor((editor) => {
-      editor
-        .getAllMarks()
-        .filter(
-          (mark) => !!mark.className?.contains("vale-underline-highlight")
-        )
-        .forEach((mark) => mark.clear());
+  // TODO: Refactor
+  // highlightRange(range: CodeMirror.MarkerRange): void {
+  //   this.withCodeMirrorEditor((editor) => {
+  //     editor
+  //       .getAllMarks()
+  //       .filter(
+  //         (mark) => !!mark.className?.contains("vale-underline-highlight")
+  //       )
+  //       .forEach((mark) => mark.clear());
 
-      editor.markText(range.from, range.to, {
-        className: "vale-underline-highlight",
-      });
-    });
-  }
+  //     editor.markText(range.from, range.to, {
+  //       className: "vale-underline-highlight",
+  //     });
+  //   });
+  // }
 
   // withCodeMirrorEditor is a convenience function for making sure that a
   // function runs with a valid view and editor.
   withCodeMirrorEditor(
-    callback: (editor: CodeMirror.Editor, view: MarkdownView) => void
+    callback: (editor: Editor, view: MarkdownView) => void,
   ): void {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) {
       return;
     }
 
-    callback(view.sourceMode.cmEditor, view);
+    callback(view.editor, view);
   }
 }

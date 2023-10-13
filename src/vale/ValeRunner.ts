@@ -2,7 +2,6 @@ import { timed } from "../debug";
 import { ValeResponse, ValeSettings } from "../types";
 import { ValeCli } from "./ValeCli";
 import { ValeConfigManager } from "./ValeConfigManager";
-import { ValeServer } from "./ValeServer";
 
 // The primary responsibility of the ValeRunner is to make sure only one check
 // is running at any given time.
@@ -20,9 +19,7 @@ export class ValeRunner {
   run = notConcurrent(
     async (text: string, format: string): Promise<ValeResponse> => {
       return timed("ValeRunner.run()", async () => {
-        if (this.settings.type === "server") {
-          return new ValeServer(this.settings.server.url).vale(text, format);
-        } else if (this.settings.type === "cli") {
+        if (this.settings.type === "cli") {
           const [valeExists, configExists] = await Promise.all([
             this.configManager.valePathExists(),
             this.configManager.configPathExists(),
@@ -42,13 +39,13 @@ export class ValeRunner {
           throw new Error("Unknown runner");
         }
       });
-    }
+    },
   );
 }
 
 // notConcurrent ensures there's only ever one promise in-flight.
 const notConcurrent = (
-  proc: (text: string, format: string) => PromiseLike<ValeResponse>
+  proc: (text: string, format: string) => PromiseLike<ValeResponse>,
 ) => {
   let inFlight: Promise<ValeResponse> | false = false;
 
