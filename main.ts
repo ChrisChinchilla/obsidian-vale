@@ -17,7 +17,10 @@ import { valeDecorationsExtension, setValeDecorationsEffect } from './src/valeDe
 const execAsync = promisify(exec);
 
 export interface ValeIssue {
-  Action: string;
+  Action: {
+    Name: string;
+    Params: string[];
+  };
   Check: string;
   Description: string;
   Line: number;
