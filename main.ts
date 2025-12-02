@@ -9,21 +9,14 @@ import {
   TFile,
   debounce
 } from 'obsidian';
-import { 
-  Decoration, 
-  DecorationSet, 
-  ViewPlugin, 
-  ViewUpdate, 
-  WidgetType,
-  EditorView 
-} from '@codemirror/view';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
+import { valeDecorationsExtension, setValeDecorationsEffect } from './src/valeDecorations';
 
 const execAsync = promisify(exec);
 
-interface ValeIssue {
+export interface ValeIssue {
   Action: string;
   Check: string;
   Description: string;
@@ -44,6 +37,7 @@ interface ValePluginSettings {
   configPath: string;
   debounceDelay: number;
   enableAutoCheck: boolean;
+  enableInlineDecorations: boolean;
   severityColors: {
     error: string;
     warning: string;
@@ -56,6 +50,7 @@ const DEFAULT_SETTINGS: ValePluginSettings = {
   configPath: '',
   debounceDelay: 1000,
   enableAutoCheck: true,
+  enableInlineDecorations: true,
   severityColors: {
     error: '#ff0000',
     warning: '#ffa500',
@@ -65,8 +60,7 @@ const DEFAULT_SETTINGS: ValePluginSettings = {
 
 export default class ValePlugin extends Plugin {
   settings: ValePluginSettings;
-  private decorations: Map<string, any[]> = new Map();
-  private currentIssues: Map<string, ValeIssue[]> = new Map();
+  public currentIssues: Map<string, ValeIssue[]> = new Map();
   private debouncedCheck: any;
   private statusBarItem: HTMLElement;
 
@@ -76,6 +70,9 @@ export default class ValePlugin extends Plugin {
     // Add status bar item
     this.statusBarItem = this.addStatusBarItem();
     this.statusBarItem.setText('Vale: Ready');
+
+    // Register CodeMirror 6 extension for Vale decorations
+    this.registerEditorExtension(valeDecorationsExtension);
 
     // Create debounced check function
     this.debouncedCheck = debounce(
@@ -103,6 +100,36 @@ export default class ValePlugin extends Plugin {
         this.settings.enableAutoCheck = !this.settings.enableAutoCheck;
         this.saveSettings();
         new Notice(`Vale auto-check ${this.settings.enableAutoCheck ? 'enabled' : 'disabled'}`);
+      }
+    });
+
+    this.addCommand({
+      id: 'toggle-inline-decorations',
+      name: 'Toggle inline decorations',
+      callback: () => {
+        this.settings.enableInlineDecorations = !this.settings.enableInlineDecorations;
+        this.saveSettings();
+
+        // Refresh decorations based on new setting
+        if (this.settings.enableInlineDecorations) {
+          // Re-apply decorations if we have issues
+          const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+          const activeFile = this.app.workspace.getActiveFile();
+          if (activeView && activeFile) {
+            const issues = this.currentIssues.get(activeFile.path);
+            if (issues && issues.length > 0) {
+              this.applyDecorations(activeView.editor, issues);
+            }
+          }
+        } else {
+          // Clear decorations
+          const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+          if (activeView) {
+            this.clearDecorations(activeView.editor);
+          }
+        }
+
+        new Notice(`Vale inline decorations ${this.settings.enableInlineDecorations ? 'enabled' : 'disabled'}`);
       }
     });
 
@@ -210,7 +237,9 @@ export default class ValePlugin extends Plugin {
 
     try {
       const content = await this.app.vault.read(file);
-      const tempPath = path.join(this.app.vault.adapter.basePath, '.vale-temp.md');
+      const adapter = this.app.vault.adapter as any;
+      const basePath = adapter.basePath || adapter.getBasePath?.() || '';
+      const tempPath = path.join(basePath, '.vale-temp.md');
       
       // Write content to temp file
       await this.app.vault.adapter.write('.vale-temp.md', content);
@@ -280,41 +309,31 @@ export default class ValePlugin extends Plugin {
     }
   }
 
-  private applyDecorations(editor: Editor, issues: ValeIssue[]) {
-    // Clear existing decorations
-    this.clearDecorations(editor);
-
-    const decorations: any[] = [];
-
-    issues.forEach(issue => {
-      const from = editor.offsetToPos(this.getOffsetForLine(editor, issue.Line - 1) + issue.Span[0] - 1);
-      const to = editor.offsetToPos(this.getOffsetForLine(editor, issue.Line - 1) + issue.Span[1]);
-
-      // Create decoration widget
-      const widget = this.createIssueWidget(issue);
-      
-      // Apply decoration based on severity
-      const className = this.getSeverityClass(issue.Severity);
-      
-      // Mark text with appropriate class
-      editor.addHighlights(
-        [{ from, to, className }],
-        className,
-        true,
-        true
-      );
-
-      decorations.push({ from, to, className, widget, issue });
-    });
-
-    // Store decorations for cleanup
+  public applyDecorations(editor: Editor, issues: ValeIssue[]) {
+    // Store issues for reference
     const activeFile = this.app.workspace.getActiveFile();
     if (activeFile) {
-      this.decorations.set(activeFile.path, decorations);
+      this.currentIssues.set(activeFile.path, issues);
     }
 
-    // Add hover handlers
-    this.addHoverHandlers(editor, decorations);
+    // Check if inline decorations are enabled
+    if (!this.settings.enableInlineDecorations) {
+      return;
+    }
+
+    // Get the CodeMirror 6 EditorView from the editor
+    // Access it through the cm property
+    const view = (editor as any).cm;
+
+    if (!view) {
+      console.warn('Could not access CodeMirror 6 view');
+      return;
+    }
+
+    // Dispatch the state effect to update decorations
+    view.dispatch({
+      effects: setValeDecorationsEffect.of(issues)
+    });
   }
 
   private getOffsetForLine(editor: Editor, line: number): number {
@@ -355,7 +374,8 @@ export default class ValePlugin extends Plugin {
       const severityEl = document.createElement('div');
       severityEl.className = 'vale-tooltip-severity';
       severityEl.textContent = issue.Severity.toUpperCase();
-      severityEl.style.color = this.settings.severityColors[issue.Severity.toLowerCase()] || '#000';
+      const severityKey = issue.Severity.toLowerCase() as keyof typeof this.settings.severityColors;
+      severityEl.style.color = this.settings.severityColors[severityKey] || '#000';
       
       const messageEl = document.createElement('div');
       messageEl.className = 'vale-tooltip-message';
@@ -396,45 +416,26 @@ export default class ValePlugin extends Plugin {
     };
 
     // Add event listeners to editor container
-    const editorEl = editor.containerEl;
-    
-    editorEl.addEventListener('mousemove', (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      const pos = editor.coordsAtPos({ x: event.clientX, y: event.clientY });
-      
-      if (!pos) {
-        hideTooltip();
-        return;
-      }
+    // Note: Editor API doesn't expose containerEl and coordsAtPos properly
+    // Disabled for now - this would need CodeMirror 6 integration
+    // Users can see issues in the Vale panel instead
 
-      const offset = editor.posToOffset(pos);
-      
-      // Check if cursor is over any issue
-      let foundIssue = false;
-      for (const decoration of decorations) {
-        const fromOffset = editor.posToOffset(decoration.from);
-        const toOffset = editor.posToOffset(decoration.to);
-        
-        if (offset >= fromOffset && offset <= toOffset) {
-          showTooltip(event, decoration.issue);
-          foundIssue = true;
-          break;
-        }
-      }
-      
-      if (!foundIssue) {
-        hideTooltip();
-      }
-    });
-
-    editorEl.addEventListener('mouseleave', hideTooltip);
+    // const editorEl = (editor as any).containerEl;
+    // if (editorEl) {
+    //   editorEl.addEventListener('mousemove', (event: MouseEvent) => { ... });
+    //   editorEl.addEventListener('mouseleave', hideTooltip);
+    // }
   }
 
-  private clearDecorations(editor: Editor) {
-    // Clear all Vale-related highlights
-    ['vale-error', 'vale-warning', 'vale-suggestion'].forEach(className => {
-      editor.removeHighlights(className);
-    });
+  public clearDecorations(editor: Editor) {
+    // Clear decorations by dispatching an empty array
+    const view = (editor as any).cm;
+
+    if (view) {
+      view.dispatch({
+        effects: setValeDecorationsEffect.of([])
+      });
+    }
   }
 
   private clearAllDecorations() {
@@ -442,7 +443,6 @@ export default class ValePlugin extends Plugin {
     if (activeView) {
       this.clearDecorations(activeView.editor);
     }
-    this.decorations.clear();
   }
 }
 
@@ -491,6 +491,35 @@ class ValeSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.enableAutoCheck = value;
           await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Show inline decorations')
+      .setDesc('Display wavy underlines for Vale issues in the editor')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.enableInlineDecorations)
+        .onChange(async (value) => {
+          this.plugin.settings.enableInlineDecorations = value;
+          await this.plugin.saveSettings();
+
+          // Refresh decorations based on new setting
+          if (value) {
+            // Re-apply decorations if we have issues
+            const activeView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+            const activeFile = this.plugin.app.workspace.getActiveFile();
+            if (activeView && activeFile) {
+              const issues = this.plugin.currentIssues.get(activeFile.path);
+              if (issues && issues.length > 0) {
+                this.plugin.applyDecorations(activeView.editor, issues);
+              }
+            }
+          } else {
+            // Clear decorations
+            const activeView = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+            if (activeView) {
+              this.plugin.clearDecorations(activeView.editor);
+            }
+          }
         }));
 
     new Setting(containerEl)

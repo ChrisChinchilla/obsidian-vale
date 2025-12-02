@@ -1,4 +1,4 @@
-import { useConfigManager } from "hooks";
+import { useConfigManager } from "../hooks";
 import { Setting } from "obsidian";
 import * as React from "react";
 import { LoaderCube } from "../components/LoaderCube";
@@ -14,12 +14,12 @@ export const GeneralSettings = ({
   onSettingsChange,
 }: Props): React.ReactElement => {
   const [onboarding, setOnboarding] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>();
+  const ref = React.useRef<HTMLDivElement>(null);
   const configManager = useConfigManager(settings);
 
   // Check whether the user have configured a path to a valid config file.
   React.useEffect(() => {
-    if (settings.type === "cli") {
+    if (settings.type === "cli" && configManager) {
       configManager.valePathExists().then((exists) => setOnboarding(!exists));
     }
   }, [settings, configManager]);
@@ -52,7 +52,7 @@ export const GeneralSettings = ({
                 .setValue(settings.server.url)
                 .setPlaceholder("http://localhost:7777");
 
-              component.inputEl.onblur = async (value) => {
+              component.inputEl.onblur = (value) => {
                 onSettingsChange({
                   ...settings,
                   server: {
@@ -84,9 +84,9 @@ export const GeneralSettings = ({
               .setName("Vale path")
               .setDesc("Absolute path to the Vale binary.")
               .addText((text) => {
-                const component = text.setValue(settings.cli.valePath);
+                const component = text.setValue(settings.cli.valePath || "");
 
-                component.inputEl.onblur = async (value) => {
+                component.inputEl.onblur = (value) => {
                   onSettingsChange({
                     ...settings,
                     cli: {
@@ -103,9 +103,9 @@ export const GeneralSettings = ({
               .setName("Config path")
               .setDesc("Absolute path to a Vale config file.")
               .addText((text) => {
-                const component = text.setValue(settings.cli.configPath);
+                const component = text.setValue(settings.cli.configPath || "");
 
-                component.inputEl.onblur = async (value) => {
+                component.inputEl.onblur = (value) => {
                   onSettingsChange({
                     ...settings,
                     cli: {
@@ -168,8 +168,10 @@ export const Onboarding = ({
       {settings.cli.managed ? (
         <DownloadButton
           onInstall={async () => {
-            await configManager.initializeDataPath();
-            await configManager.installVale();
+            if (configManager) {
+              await configManager.initializeDataPath();
+              await configManager.installVale();
+            }
           }}
           onInstalled={() => onSettingsChange({ ...settings })}
         />

@@ -253,3 +253,25 @@
 .obsidian-vale .alert--highlighted:first-child {
   margin-top: 0;
 }
+
+/* CodeMirror 6 inline decorations */
+.cm-line .vale-error {
+  text-decoration: underline wavy;
+  text-decoration-color: var(--vale-alert-severity-error-background-color, #da615c);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+
+.cm-line .vale-warning {
+  text-decoration: underline wavy;
+  text-decoration-color: var(--vale-alert-severity-warning-background-color, #e9b35f);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+
+.cm-line .vale-suggestion {
+  text-decoration: underline wavy;
+  text-decoration-color: var(--vale-alert-severity-suggestion-background-color, #8981f3);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}

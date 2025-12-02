@@ -1,5 +1,5 @@
 import CodeMirror from "codemirror";
-import { EventBus } from "EventBus";
+import { EventBus } from "./EventBus";
 import {
   FileSystemAdapter,
   MarkdownView,
@@ -72,14 +72,18 @@ export default class ValePlugin extends Plugin {
 
     this.registerView(
       VIEW_TYPE_VALE,
-      (leaf) =>
-        new ValeView(
+      (leaf) => {
+        if (!this.runner) {
+          throw new Error("ValeRunner not initialized");
+        }
+        return new ValeView(
           leaf,
           this.settings,
           this.runner,
           this.eventBus,
           this.onAlertClick
-        )
+        );
+      }
     );
 
     this.registerDomEvent(document, "pointerup", this.onMarkerClick);
@@ -93,11 +97,13 @@ export default class ValePlugin extends Plugin {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_VALE);
 
     // Remove all marks from the previous check.
-    this.app.workspace.iterateCodeMirrors((cm) => {
-      cm.getAllMarks()
-        .filter((mark) => !!mark.className?.contains("vale-underline"))
-        .forEach((mark) => mark.clear());
-    });
+    if ((this.app.workspace as any).iterateCodeMirrors) {
+      (this.app.workspace as any).iterateCodeMirrors((cm: any) => {
+        cm.getAllMarks()
+          .filter((mark: any) => !!mark.className?.contains("vale-underline"))
+          .forEach((mark: any) => mark.clear());
+      });
+    }
 
     this.unregisterAlerts();
   }
@@ -107,10 +113,13 @@ export default class ValePlugin extends Plugin {
   async activateView(): Promise<void> {
     // Create the Vale view if it's not already created.
     if (this.app.workspace.getLeavesOfType(VIEW_TYPE_VALE).length === 0) {
-      await this.app.workspace.getRightLeaf(false).setViewState({
-        type: VIEW_TYPE_VALE,
-        active: true,
-      });
+      const leaf = this.app.workspace.getRightLeaf(false);
+      if (leaf) {
+        await leaf.setViewState({
+          type: VIEW_TYPE_VALE,
+          active: true,
+        });
+      }
     }
 
     // There should only be one Vale view open.
@@ -204,6 +213,12 @@ export default class ValePlugin extends Plugin {
   markAlerts = (): void => {
     this.withCodeMirrorEditor((editor) => {
       this.alerts.forEach((alert: ValeAlert) => {
+        // Guard against undefined or invalid Span
+        if (!alert.Span || !Array.isArray(alert.Span) || alert.Span.length < 2) {
+          console.warn('Vale alert has invalid Span:', alert);
+          return;
+        }
+
         const marker = editor.markText(
           { line: alert.Line - 1, ch: alert.Span[0] - 1 },
           { line: alert.Line - 1, ch: alert.Span[1] },
@@ -221,6 +236,12 @@ export default class ValePlugin extends Plugin {
   // onAlertClick highlights an alert in the editor when the user clicks one of
   // the cards in the results view.
   onAlertClick(alert: ValeAlert): void {
+    // Guard against undefined or invalid Span
+    if (!alert.Span || !Array.isArray(alert.Span) || alert.Span.length < 2) {
+      console.warn('Vale alert has invalid Span:', alert);
+      return;
+    }
+
     this.withCodeMirrorEditor((editor, view) => {
       if (view.getMode() === "source") {
         const range: CodeMirror.MarkerRange = {
@@ -315,6 +336,9 @@ export default class ValePlugin extends Plugin {
       return;
     }
 
-    callback(view.sourceMode.cmEditor, view);
+    const editor = (view as any).sourceMode?.cmEditor || (view as any).editor?.cm;
+    if (editor) {
+      callback(editor, view);
+    }
   }
 }

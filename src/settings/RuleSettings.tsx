@@ -1,7 +1,7 @@
-import { Icon } from "components/Icon";
-import { useConfigManager } from "hooks";
+import { Icon } from "../components/Icon";
+import { useConfigManager } from "../hooks";
 import React from "react";
-import { ValeRule, ValeSettings } from "types";
+import { ValeRule, ValeSettings } from "../types";
 import { RuleSettingList } from "../components/RuleSettingList";
 
 interface Props {
@@ -21,6 +21,8 @@ export const RuleSettings = ({
 
   React.useEffect(() => {
     (async () => {
+      if (!configManager) return;
+
       const styleRules = await configManager.getRulesForStyle(style);
       const configuredRules = await configManager.getConfiguredRules(style);
 
@@ -56,7 +58,9 @@ export const RuleSettings = ({
       <RuleSettingList
         rules={state}
         onChange={async (rule) => {
-          await configManager.updateRule(style, rule);
+          if (configManager) {
+            await configManager.updateRule(style, rule);
+          }
         }}
       />
     </>

@@ -18,13 +18,24 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@types/download": "^8.0.5",
+    "@types/ini": "^4.1.1",
     "@types/node": "^16.11.6",
+    "@types/react": "^18.3.27",
+    "@types/react-dom": "^18.3.7",
+    "@types/unzipper": "^0.10.11",
     "@typescript-eslint/eslint-plugin": "5.29.0",
     "@typescript-eslint/parser": "5.29.0",
     "builtin-modules": "3.3.0",
+    "compressing": "^2.0.0",
+    "download": "^8.0.0",
     "esbuild": "0.17.3",
+    "ini": "^6.0.0",
     "obsidian": "latest",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "tslib": "2.4.0",
-    "typescript": "4.7.4"
+    "typescript": "4.7.4",
+    "unzipper": "^0.12.3"
   }
 }

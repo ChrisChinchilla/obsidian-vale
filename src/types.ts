@@ -70,7 +70,7 @@ export interface ValeConfig {
       BasedOnStyles?: string;
 
       // Rules
-      [key: string]: string;
+      [key: string]: string | undefined;
     };
   };
 }

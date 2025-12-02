@@ -4,7 +4,7 @@ import * as fs from "fs";
 import { parse, stringify } from "ini";
 import * as path from "path";
 import { Extract } from "unzipper";
-import { DEFAULT_VALE_INI, ValeConfig, ValeRule, ValeStyle } from "../types";
+import { DEFAULT_VALE_INI, ValeConfig, ValeRule, ValeRuleSeverity, ValeStyle } from "../types";
 
 // ValeManager exposes file operations for working with the Vale configuration
 // file and styles.
@@ -41,6 +41,13 @@ export class ValeConfigManager {
 
   async installStyle(style: ValeStyle): Promise<void> {
     const stylesPath = await this.getStylesPath();
+    if (!stylesPath) {
+      throw new Error('StylesPath not configured');
+    }
+
+    if (!style.url) {
+      throw new Error('Style URL is not defined');
+    }
 
     const zipPath = path.join(stylesPath, path.basename(style.url));
 
@@ -54,7 +61,7 @@ export class ValeConfigManager {
     }
 
     return new Promise((resolve) => {
-      download(style.url, { extract: true }).pipe(
+      download(style.url!, { extract: true }).pipe(
         fs.createWriteStream(zipPath).on("close", () => {
           fs.createReadStream(zipPath)
             .pipe(Extract({ path: path.dirname(zipPath) }))
@@ -68,7 +75,11 @@ export class ValeConfigManager {
   }
 
   async uninstallStyle(style: ValeStyle): Promise<void> {
-    return fs.promises.rm(path.join(await this.getStylesPath(), style.name), {
+    const stylesPath = await this.getStylesPath();
+    if (!stylesPath) {
+      throw new Error('StylesPath not configured');
+    }
+    return fs.promises.rm(path.join(stylesPath, style.name), {
       force: true,
       recursive: true,
     });
@@ -98,11 +109,21 @@ export class ValeConfigManager {
     return path.join(path.dirname(this.configPath), stylesPath);
   }
 
+  /**
+   * Helper method to parse comma-separated style names from config
+   */
+  private parseStyles(basedOnStyles: string): string[] {
+    return basedOnStyles.split(",").map((style) => style.trim());
+  }
+
   async enableStyle(name: string): Promise<void> {
     const config = await this.loadConfig();
 
-    const basedOnStyles = config["*"].md.BasedOnStyles;
-    const styles = basedOnStyles.split(",").map((style) => style.trim());
+    const basedOnStyles = config["*"]?.md?.BasedOnStyles;
+    if (!basedOnStyles) {
+      throw new Error('Invalid config structure');
+    }
+    const styles = this.parseStyles(basedOnStyles);
     const stylesSet = new Set(styles);
     stylesSet.add(name);
     config["*"].md.BasedOnStyles = [...stylesSet].join(", ");
@@ -113,8 +134,11 @@ export class ValeConfigManager {
   async disableStyle(name: string): Promise<void> {
     const config = await this.loadConfig();
 
-    const basedOnStyles = config["*"].md.BasedOnStyles;
-    const styles = basedOnStyles.split(",").map((style) => style.trim());
+    const basedOnStyles = config["*"]?.md?.BasedOnStyles;
+    if (!basedOnStyles) {
+      throw new Error('Invalid config structure');
+    }
+    const styles = this.parseStyles(basedOnStyles);
     const stylesSet = new Set(styles);
     stylesSet.delete(name);
     config["*"].md.BasedOnStyles = [...stylesSet].join(", ");
@@ -145,10 +169,11 @@ export class ValeConfigManager {
 
     Object.entries(md).map(([key, value]) => {
       const identifier: string = key;
-      if (identifier.startsWith(style + ".")) {
+      if (identifier.startsWith(style + ".") && value) {
+        const severityValue = value === "YES" || value === "NO" ? "default" : (value as ValeRuleSeverity);
         rules[identifier.split(".")[1]] = {
           name: identifier.split(".")[1],
-          severity: value === "YES" || value === "NO" ? "default" : value,
+          severity: severityValue,
           disabled: value === "NO",
         };
       }
@@ -158,8 +183,12 @@ export class ValeConfigManager {
   }
 
   async getRulesForStyle(style: string): Promise<string[]> {
+    const stylesPath = await this.getStylesPath();
+    if (!stylesPath) {
+      throw new Error('StylesPath not configured');
+    }
     const paths = await fs.promises.readdir(
-      path.join(await this.getStylesPath(), style)
+      path.join(stylesPath, style)
     );
 
     return paths
@@ -169,13 +198,17 @@ export class ValeConfigManager {
   }
 
   async getInstalled(): Promise<string[]> {
-    const paths = await fs.promises.readdir(await this.getStylesPath());
+    const stylesPath = await this.getStylesPath();
+    if (!stylesPath) {
+      return ["Vale"];
+    }
+    const paths = await fs.promises.readdir(stylesPath);
 
     const installed = [...paths]
       .filter((style) => style)
       .filter(async (name) => {
         const info = await fs.promises.stat(
-          path.join(await this.getStylesPath(), name)
+          path.join(stylesPath, name)
         );
         return info.isDirectory();
       });
@@ -186,9 +219,11 @@ export class ValeConfigManager {
   async getEnabledStyles(): Promise<string[]> {
     const config = await this.loadConfig();
 
-    const styles = config["*"].md.BasedOnStyles.split(",")
-      .map((style) => style.trim())
-      .filter((style) => style);
+    const basedOnStyles = config["*"]?.md?.BasedOnStyles;
+    if (!basedOnStyles) {
+      return [];
+    }
+    const styles = this.parseStyles(basedOnStyles).filter((style) => style);
 
     return [...new Set(styles)];
   }
@@ -229,7 +264,7 @@ export class ValeConfigManager {
 
     return path.join(
       destinationPath,
-      "vale" + process.platform === "win32" ? ".exe" : ""
+      "vale" + (process.platform === "win32" ? ".exe" : "")
     );
   }
 
@@ -240,9 +275,12 @@ export class ValeConfigManager {
       await this.saveConfig(DEFAULT_VALE_INI);
     }
 
-    await fs.promises.mkdir(await this.getStylesPath(), {
-      recursive: true,
-    });
+    const stylesPath = await this.getStylesPath();
+    if (stylesPath) {
+      await fs.promises.mkdir(stylesPath, {
+        recursive: true,
+      });
+    }
   }
 
   async getAvailableStyles(): Promise<ValeStyle[]> {

@@ -46,7 +46,7 @@ export const ValeApp = ({
       .then((response) => {
         checked(() => {
           const results = Object.values(response)[0] ?? [];
-          setReport({ ...report, results: results });
+          setReport({ results: results });
           eventBus.dispatch("alerts", results);
         });
       })
@@ -55,7 +55,7 @@ export const ValeApp = ({
           if (err.message === "net::ERR_CONNECTION_REFUSED") {
             checked(() =>
               setReport({
-                ...report,
+                results: [],
                 errors: (
                   <ErrorMessage message={"Couldn't connect to Vale Server."} />
                 ),
@@ -69,7 +69,7 @@ export const ValeApp = ({
           } else {
             checked(() =>
               setReport({
-                ...report,
+                results: [],
                 errors: <ErrorMessage message={err.toString()} />,
               })
             );
@@ -77,7 +77,7 @@ export const ValeApp = ({
         } else {
           checked(() =>
             setReport({
-              ...report,
+              results: [],
               errors: <ErrorMessage message={err.toString()} />,
             })
           );
@@ -104,7 +104,7 @@ export const ValeApp = ({
       unr();
       unr2();
     };
-  }, [report]);
+  }, [eventBus]);
 
   // Run the actual check.
   React.useEffect(() => {

@@ -15,10 +15,10 @@ export const AlertList = ({
 }: Props): React.ReactElement => {
   return (
     <>
-      {alerts?.map((alert, key) => {
+      {alerts?.map((alert, index) => {
         return (
           <Alert
-            key={key}
+            key={`${alert.Check}-${alert.Line}-${alert.Span[0]}-${index}`}
             alert={alert}
             onClick={onClick}
             highlight={highlight === alert}
