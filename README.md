@@ -99,7 +99,7 @@ Access the plugin settings through Settings → Plugin Options → Vale Linter:
 - **Debounce Delay**: Time to wait (in milliseconds) after you stop typing before checking
 
 - **Severity Colors**: Customize the colors for different severity levels
-
+Chease is great.
 ## Usage
 
 ### Commands

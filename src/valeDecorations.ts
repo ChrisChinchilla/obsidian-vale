@@ -6,10 +6,45 @@ import type { ValeIssue } from '../main';
 // Types and Constants
 // ============================================================================
 
-type ActionType = 'remove' | 'replace' | 'suggest' | 'edit' | 'spell';
+type ActionType = 'remove' | 'replace' | 'suggest' | 'edit';
 
 // Store issues for hover tooltip access
 let currentIssues: ValeIssue[] = [];
+
+// Cache for dictionary suggestions to avoid redundant lookups
+const dictionarySuggestionsCache = new Map<string, string[]>();
+
+/**
+ * Get spelling suggestions from the system dictionary
+ * Uses Electron's spell checker via the webFrame API
+ */
+async function getSpellingSuggestions(word: string): Promise<string[]> {
+	// Check cache first
+	const cached = dictionarySuggestionsCache.get(word);
+	if (cached !== undefined) {
+		return cached;
+	}
+
+	try {
+		// Access Electron's spell checker through the webFrame API if available
+		// @ts-ignore - Electron webFrame API
+		if (window.require) {
+			// @ts-ignore
+			const { webFrame } = window.require('electron');
+			if (webFrame?.getWordSuggestions) {
+				const suggestions = webFrame.getWordSuggestions(word);
+				dictionarySuggestionsCache.set(word, suggestions);
+				return suggestions;
+			}
+		}
+	} catch (e) {
+		console.error('Failed to get spelling suggestions:', e);
+	}
+
+	// No spell checker available or error occurred
+	dictionarySuggestionsCache.set(word, []);
+	return [];
+}
 
 // ============================================================================
 // Position Calculation Helpers
@@ -42,13 +77,16 @@ function calculateIssuePosition(issue: ValeIssue, doc: any): { from: number; to:
 
 /**
  * Parse Vale action to determine operation type and suggestions
+ * Note: For spelling actions with 'spellings' placeholder, returns empty suggestions
+ * (actual suggestions need to be fetched from system dictionary)
  */
 function parseValeAction(action: ValeIssue['Action']): {
   operationType: string;
   suggestions: string[];
+  needsSpellCheck: boolean;
 } {
   if (!action || !action.Name || !action.Params || action.Params.length === 0) {
-    return { operationType: '', suggestions: [] };
+    return { operationType: '', suggestions: [], needsSpellCheck: false };
   }
 
   const actionName = action.Name.toLowerCase() as ActionType;
@@ -57,14 +95,25 @@ function parseValeAction(action: ValeIssue['Action']): {
   if (actionName === 'edit') {
     return {
       operationType: action.Params[0].toLowerCase(),
-      suggestions: action.Params.slice(1)
+      suggestions: action.Params.slice(1),
+      needsSpellCheck: false
+    };
+  }
+
+  // For 'suggest' actions with 'spellings' placeholder
+  if (actionName === 'suggest' && action.Params.length === 1 && action.Params[0] === 'spellings') {
+    return {
+      operationType: 'suggest',
+      suggestions: [],  // Empty - will be fetched from system dictionary
+      needsSpellCheck: true
     };
   }
 
   // For other actions, all params are suggestions
   return {
     operationType: actionName,
-    suggestions: action.Params
+    suggestions: action.Params,
+    needsSpellCheck: false
   };
 }
 
@@ -132,10 +181,12 @@ function generateTooltipText(issue: ValeIssue): string {
   let text = `${issue.Severity}: ${issue.Message}`;
 
   if (issue.Action && issue.Action.Name) {
-    const { operationType, suggestions } = parseValeAction(issue.Action);
+    const { operationType, suggestions, needsSpellCheck } = parseValeAction(issue.Action);
 
     if (operationType === 'remove') {
       text += '\n\nAction: Remove';
+    } else if (needsSpellCheck) {
+      text += '\n\nSpelling suggestions available';
     } else if (suggestions.length > 0) {
       text += '\n\nSuggestions:\n' + suggestions.map(s => `  • ${s}`).join('\n');
     }
@@ -163,12 +214,24 @@ function createRemoveButton(view: EditorView, issue: ValeIssue): HTMLElement {
 }
 
 /**
+ * Create a header element for suggestions section
+ */
+function createSuggestionsHeader(text: string): HTMLElement {
+  const header = document.createElement('div');
+  header.className = 'vale-tooltip-suggestions-header';
+  header.textContent = text;
+  return header;
+}
+
+/**
  * Create suggestion buttons
+ * @param directApply - If true, directly replace text without using Vale action (for spell check)
  */
 function createSuggestionButtons(
   view: EditorView,
   issue: ValeIssue,
-  suggestions: string[]
+  suggestions: string[],
+  directApply: boolean = false
 ): HTMLElement {
   const container = document.createElement('div');
   container.className = 'vale-tooltip-suggestions-list';
@@ -180,8 +243,20 @@ function createSuggestionButtons(
     button.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (applyValeAction(view, issue, index)) {
-        view.focus();
+
+      if (directApply) {
+        // Directly replace text for spell check suggestions
+        const position = calculateIssuePosition(issue, view.state.doc);
+        if (position) {
+          const { from, to } = position;
+          view.dispatch({ changes: { from, to, insert: suggestion } });
+          view.focus();
+        }
+      } else {
+        // Use Vale action for regular suggestions
+        if (applyValeAction(view, issue, index)) {
+          view.focus();
+        }
       }
     };
     container.appendChild(button);
@@ -200,12 +275,7 @@ function createActionUI(view: EditorView, issue: ValeIssue): HTMLElement | null 
 
   const actionName = issue.Action.Name.toLowerCase() as ActionType;
 
-  // Skip spell check actions
-  if (actionName === 'spell') {
-    return null;
-  }
-
-  const { operationType, suggestions } = parseValeAction(issue.Action);
+  const { operationType, suggestions, needsSpellCheck } = parseValeAction(issue.Action);
 
   // Handle remove actions
   if (operationType === 'remove' || actionName === 'remove') {
@@ -215,19 +285,37 @@ function createActionUI(view: EditorView, issue: ValeIssue): HTMLElement | null 
     return container;
   }
 
+  // Handle spell check actions - fetch suggestions asynchronously
+  if (needsSpellCheck) {
+    const container = document.createElement('div');
+    container.appendChild(createSuggestionsHeader('Loading suggestions...'));
+
+    // Fetch spelling suggestions asynchronously
+    getSpellingSuggestions(issue.Match)
+      .then(spellSuggestions => {
+        container.innerHTML = ''; // Clear loading message
+
+        if (spellSuggestions.length > 0) {
+          container.appendChild(createSuggestionsHeader('Suggestions:'));
+          container.appendChild(createSuggestionButtons(view, issue, spellSuggestions, true));
+        } else {
+          container.appendChild(createSuggestionsHeader('No suggestions available'));
+        }
+      })
+      .catch(err => {
+        container.innerHTML = '';
+        container.appendChild(createSuggestionsHeader('Error loading suggestions'));
+        console.error('Error fetching spelling suggestions:', err);
+      });
+
+    return container;
+  }
+
   // Handle suggestion-based actions
   if (suggestions.length > 0) {
-    const fragment = document.createDocumentFragment();
-
-    const header = document.createElement('div');
-    header.className = 'vale-tooltip-suggestions-header';
-    header.textContent = 'Suggestions:';
-    fragment.appendChild(header);
-
-    fragment.appendChild(createSuggestionButtons(view, issue, suggestions));
-
     const container = document.createElement('div');
-    container.appendChild(fragment);
+    container.appendChild(createSuggestionsHeader('Suggestions:'));
+    container.appendChild(createSuggestionButtons(view, issue, suggestions));
     return container;
   }
 
