@@ -1,0 +1,102 @@
+import { ItemView, MarkdownView, WorkspaceLeaf } from "obsidian";
+import * as React from "react";
+import * as ReactDOM from "react-dom/client";
+import { ValeApp } from "./components/ValeApp";
+import { AppContext, SettingsContext } from "./context";
+import { timed } from "./debug";
+import { EventBus } from "./EventBus";
+import { ValeAlert, ValeSettings } from "./types";
+import { ValeRunner } from "./vale/ValeRunner";
+
+export const VIEW_TYPE_VALE = "vale";
+
+// ValeView displays the results from a Vale check.
+export class ValeView extends ItemView {
+  private settings: ValeSettings;
+  private runner: ValeRunner;
+  private eventBus: EventBus;
+  private root: ReactDOM.Root | null = null;
+
+  private ready: boolean;
+  private unregisterReady: () => void;
+
+  private onAlertClick: (alert: ValeAlert) => void;
+
+  constructor(
+    leaf: WorkspaceLeaf,
+    settings: ValeSettings,
+    runner: ValeRunner,
+    eventBus: EventBus,
+    onAlertClick: (alert: ValeAlert) => void
+  ) {
+    super(leaf);
+    this.settings = settings;
+    this.runner = runner;
+    this.eventBus = eventBus;
+    this.onAlertClick = onAlertClick;
+  }
+
+  getViewType(): string {
+    return VIEW_TYPE_VALE;
+  }
+
+  getDisplayText(): string {
+    return "Vale";
+  }
+
+  getIcon(): string {
+    return "check-small";
+  }
+
+  async onOpen(): Promise<void> {
+    // Perform a check as soon as the view is ready.
+    this.unregisterReady = this.eventBus.on("ready", () => {
+      this.ready = true;
+      this.runValeCheck();
+    });
+
+    return timed("ValeResultsView.onOpen()", async () => {
+      // Create container div if it doesn't exist
+      const container = this.containerEl.createDiv();
+      this.root = ReactDOM.createRoot(container);
+      this.root.render(
+        <AppContext.Provider value={this.app}>
+          <SettingsContext.Provider value={this.settings}>
+            <div className="obsidian-vale">
+              <ValeApp
+                runner={this.runner}
+                eventBus={this.eventBus}
+                onAlertClick={this.onAlertClick}
+              />
+            </div>
+          </SettingsContext.Provider>
+        </AppContext.Provider>
+      );
+    });
+  }
+
+  async onClose(): Promise<void> {
+    this.ready = false;
+    this.unregisterReady();
+
+    return timed("ValeResultsView.onClose()", async () => {
+      if (this.root) {
+        this.root.unmount();
+        this.root = null;
+      }
+    });
+  }
+
+  runValeCheck(): void {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+
+    // Only run the check if there's an active Markdown document and the view
+    // is ready to accept check requests.
+    if (view && this.ready && view.file) {
+      this.eventBus.dispatch("check", {
+        text: view.editor.getValue(),
+        format: "." + view.file.extension,
+      });
+    }
+  }
+}
