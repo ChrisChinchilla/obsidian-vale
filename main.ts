@@ -6,7 +6,6 @@ import {
   PluginSettingTab,
   Setting,
   Notice,
-  TFile,
   debounce
 } from 'obsidian';
 import { exec } from 'child_process';
