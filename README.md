@@ -1,6 +1,6 @@
 # Obsidian Vale Plugin
 
-A plugin that integrates the [Vale](https://vale.sh/) prose linter with Obsidian, providing inline style and grammar checking directly in your editor.
+A plugin that integrates the [Vale](https://vale.sh/) prose linter with Obsidian, providing configurable, offline-first inline style and grammar checking directly in your editor.
 
 ## Features
 
@@ -13,49 +13,7 @@ A plugin that integrates the [Vale](https://vale.sh/) prose linter with Obsidian
 
 ## Prerequisites
 
-Before using this plugin, you need to have Vale installed on your system:
-
-### Installing Vale
-
-#### macOS
-```bash
-brew install vale
-```
-
-#### Windows
-```bash
-scoop install vale
-# or
-choco install vale
-```
-
-#### Linux
-```bash
-# Download the latest release from GitHub
-wget https://github.com/errata-ai/vale/releases/download/v2.29.0/vale_2.29.0_Linux_64-bit.tar.gz
-tar -xzf vale_2.29.0_Linux_64-bit.tar.gz
-sudo mv vale /usr/local/bin/
-```
-
-### Setting up Vale
-
-1. Create a `.vale.ini` configuration file in your vault or home directory:
-
-```ini
-# .vale.ini
-StylesPath = styles
-MinAlertLevel = suggestion
-
-[*.md]
-BasedOnStyles = Vale, write-good, proselint
-```
-
-2. Install Vale styles (optional but recommended):
-
-```bash
-# In your vault directory or wherever you keep your Vale config
-vale sync
-```
+Before using this plugin, [you need to have Vale installed on your system](https://vale.sh/docs/install) and [configured](https://vale.sh/docs/vale-ini).
 
 ## Installation
 
@@ -70,13 +28,17 @@ vale sync
 
 1. Clone this repository
 2. Install dependencies:
+
    ```bash
    npm install
    ```
+
 3. Build the plugin:
+
    ```bash
    npm run build
    ```
+
 4. Copy `main.js`, `manifest.json` to your vault's `.obsidian/plugins/obsidian-vale/` folder
 5. Reload Obsidian and enable the plugin
 
@@ -87,10 +49,12 @@ Access the plugin settings through Settings → Plugin Options → Vale Linter:
 ### Settings
 
 - **Vale Executable Path**: Path to the Vale executable (default: `vale`)
+
   - If Vale is in your PATH, leave as `vale`
   - Otherwise, provide the full path (e.g., `/usr/local/bin/vale`)
 
 - **Vale Config File Path**: Path to your `.vale.ini` file
+
   - Leave empty to use Vale's default config discovery
   - Or specify a custom path (e.g., `/home/user/.vale.ini`)
 
@@ -99,7 +63,7 @@ Access the plugin settings through Settings → Plugin Options → Vale Linter:
 - **Debounce Delay**: Time to wait (in milliseconds) after you stop typing before checking
 
 - **Severity Colors**: Customize the colors for different severity levels
-Chease is great.
+
 ## Usage
 
 ### Commands
@@ -121,6 +85,7 @@ Issues are displayed with different underline styles based on severity:
 ### Status Bar
 
 The status bar shows a summary of issues in the current file:
+
 - `Vale: Ready` - No issues found
 - `Vale: 2 errors, 1 warning, 3 suggestions` - Issue count by severity
 - `Vale: Checking...` - Vale is currently analyzing the file
@@ -130,6 +95,7 @@ The status bar shows a summary of issues in the current file:
 ### Vale not found
 
 If you see "Vale not found" errors:
+
 1. Ensure Vale is installed: Run `vale --version` in your terminal
 2. If Vale is not in your PATH, specify the full path in plugin settings
 3. On Windows, you might need to include the `.exe` extension
@@ -137,6 +103,7 @@ If you see "Vale not found" errors:
 ### No issues detected
 
 If Vale runs but finds no issues:
+
 1. Check your `.vale.ini` configuration
 2. Ensure you have styles installed (`vale sync`)
 3. Verify Vale works from command line: `vale your-file.md`
@@ -144,6 +111,7 @@ If Vale runs but finds no issues:
 ### Performance issues
 
 If the plugin causes lag:
+
 1. Increase the debounce delay in settings
 2. Disable auto-check and use manual checking
 3. Check if your Vale configuration is too complex
@@ -153,12 +121,14 @@ If the plugin causes lag:
 Vale's behavior is controlled by its configuration file and style guides. You can:
 
 1. Use pre-made styles:
+
    ```bash
    # Popular styles
    vale sync
    ```
 
 2. Create custom rules in `.vale/styles/YourStyle/`:
+
    ```yaml
    # .vale/styles/YourStyle/MyRule.yml
    extends: existence
@@ -179,20 +149,8 @@ Vale's behavior is controlled by its configuration file and style guides. You ca
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+Contributions are welcome! Feel free to submit issues and pull requests.
 
 ## License
 
 MIT
-
-## Credits
-
-- [Vale](https://vale.sh/) - The amazing prose linter this plugin integrates with
-- [Obsidian API](https://github.com/obsidianmd/obsidian-api) - For making this integration possible
-
-## Support
-
-If you find this plugin helpful, consider:
-- Starring the repository
-- Reporting issues or suggesting features
-- Contributing to the codebase
