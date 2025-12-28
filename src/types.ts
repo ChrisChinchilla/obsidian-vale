@@ -1,8 +1,5 @@
 export interface ValeSettings {
   type: string;
-  server: {
-    url: string;
-  };
   cli: {
     managed: boolean;
     valePath?: string;
@@ -12,9 +9,6 @@ export interface ValeSettings {
 
 export const DEFAULT_SETTINGS: ValeSettings = {
   type: "cli",
-  server: {
-    url: "http://localhost:7777",
-  },
   cli: {
     managed: true,
     valePath: "",

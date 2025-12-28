@@ -88,6 +88,8 @@ export class ValeView extends ItemView {
   }
 
   runValeCheck(): void {
+    // TODO: this should work
+    // TODO: What about non-markdown view?
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 
     // Only run the check if there's an active Markdown document and the view

@@ -29,19 +29,6 @@ export const GeneralSettings = ({
       if (ref.current) {
         ref.current.empty();
 
-        new Setting(ref.current)
-          .setName("Use Vale Server")
-          .setDesc("If disabled, you need to have the Vale CLI installed.")
-          .addToggle((toggle) =>
-            toggle
-              .setValue(settings.type === "server")
-              .onChange(async (value) => {
-                onSettingsChange({
-                  ...settings,
-                  type: value ? "server" : "cli",
-                });
-              })
-          );
 
         if (settings.type === "server") {
           new Setting(ref.current)
@@ -62,9 +49,6 @@ export const GeneralSettings = ({
                 });
               };
 
-              return component;
-            });
-        } else {
           new Setting(ref.current)
             .setName("Use managed Vale CLI")
             .setDesc(
@@ -118,7 +102,7 @@ export const GeneralSettings = ({
                 return component;
               });
           }
-        }
+        
       }
     })();
   }, [settings]);
