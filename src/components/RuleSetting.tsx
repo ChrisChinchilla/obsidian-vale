@@ -11,7 +11,7 @@ export const RuleSetting = ({
   value: rule,
   onChange,
 }: Props): React.ReactElement => {
-  const ref = React.useRef<HTMLDivElement>();
+  const ref = React.useRef<HTMLDivElement>(null);
 
   const [internal, setInternal] = React.useState(rule);
 

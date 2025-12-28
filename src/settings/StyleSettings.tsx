@@ -1,4 +1,4 @@
-import { useConfigManager } from "hooks";
+import { useConfigManager } from "../hooks";
 import { Setting } from "obsidian";
 import React from "react";
 import { ValeSettings, ValeStyle } from "../types";
@@ -14,7 +14,7 @@ export const StyleSettings = ({
 }: Props): React.ReactElement => {
   const [installedStyles, setInstalledStyles] = React.useState<ValeStyle[]>([]);
   const [enabledStyles, setEnabledStyles] = React.useState<string[]>([]);
-  const ref = React.useRef<HTMLDivElement>();
+  const ref = React.useRef<HTMLDivElement>(null);
 
   const configManager = useConfigManager(settings);
 
@@ -58,6 +58,8 @@ export const StyleSettings = ({
         toggle
           .setValue(enabledStyles.contains("Vale"))
           .onChange(async (value) => {
+            if (!configManager) return;
+
             if (value) {
               await configManager.enableStyle("Vale");
 
@@ -76,9 +78,11 @@ export const StyleSettings = ({
       );
 
     installedStyles.forEach((style) => {
+      if (!ref.current) return;
+
       const setting = new Setting(ref.current)
         .setName(style.name)
-        .setDesc(style.description);
+        .setDesc(style.description || "");
 
       if (enabledStyles.contains(style.name)) {
         setting.addExtraButton((button) =>
@@ -92,6 +96,8 @@ export const StyleSettings = ({
         toggle
           .setValue(enabledStyles.contains(style.name))
           .onChange(async (enabled) => {
+            if (!configManager) return;
+
             if (enabled) {
               await configManager.installStyle(style);
               await configManager.enableStyle(style.name);

@@ -13,11 +13,13 @@ export const Alert = ({
   onClick,
   highlight,
 }: Props): React.ReactElement => {
-  const ref = React.useRef<HTMLDivElement>();
+  const ref = React.useRef<HTMLDivElement>(null);
 
-  if (ref.current && highlight) {
-    ref.current.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
+  React.useEffect(() => {
+    if (ref.current && highlight) {
+      ref.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlight]);
 
   return (
     <div

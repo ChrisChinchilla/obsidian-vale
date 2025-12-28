@@ -1,7 +1,6 @@
 import { ItemView, MarkdownView, WorkspaceLeaf } from "obsidian";
 import * as React from "react";
-// TODO: Migrate
-import * as ReactDOM from "react-dom";
+import * as ReactDOM from "react-dom/client";
 import { ValeApp } from "./components/ValeApp";
 import { AppContext, SettingsContext } from "./context";
 import { timed } from "./debug";
@@ -16,6 +15,7 @@ export class ValeView extends ItemView {
   private settings: ValeSettings;
   private runner: ValeRunner;
   private eventBus: EventBus;
+  private root: ReactDOM.Root | null = null;
 
   private ready: boolean;
   private unregisterReady: () => void;
@@ -56,8 +56,10 @@ export class ValeView extends ItemView {
     });
 
     return timed("ValeResultsView.onOpen()", async () => {
-      // TODO: Migrate
-      ReactDOM.render(
+      // Create container div if it doesn't exist
+      const container = this.containerEl.createDiv();
+      this.root = ReactDOM.createRoot(container);
+      this.root.render(
         <AppContext.Provider value={this.app}>
           <SettingsContext.Provider value={this.settings}>
             <div className="obsidian-vale">
@@ -68,8 +70,7 @@ export class ValeView extends ItemView {
               />
             </div>
           </SettingsContext.Provider>
-        </AppContext.Provider>,
-        this.containerEl.children[1]
+        </AppContext.Provider>
       );
     });
   }
@@ -79,9 +80,10 @@ export class ValeView extends ItemView {
     this.unregisterReady();
 
     return timed("ValeResultsView.onClose()", async () => {
-      // TODO: Migrate
-
-      ReactDOM.unmountComponentAtNode(this.containerEl.children[1]);
+      if (this.root) {
+        this.root.unmount();
+        this.root = null;
+      }
     });
   }
 
@@ -92,7 +94,7 @@ export class ValeView extends ItemView {
 
     // Only run the check if there's an active Markdown document and the view
     // is ready to accept check requests.
-    if (view && this.ready) {
+    if (view && this.ready && view.file) {
       this.eventBus.dispatch("check", {
         text: view.editor.getValue(),
         format: "." + view.file.extension,

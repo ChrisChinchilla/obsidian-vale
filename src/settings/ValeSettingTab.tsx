@@ -1,12 +1,13 @@
-import { AppContext } from "context";
+import { AppContext } from "../context";
 import { App, PluginSettingTab } from "obsidian";
 import * as React from "react";
-import * as ReactDOM from "react-dom";
+import * as ReactDOM from "react-dom/client";
 import ValePlugin from "../main";
 import { SettingsRouter } from "./SettingsRouter";
 
 export class ValeSettingTab extends PluginSettingTab {
   private plugin: ValePlugin;
+  private root: ReactDOM.Root | null = null;
 
   constructor(app: App, plugin: ValePlugin) {
     super(app, plugin);
@@ -14,19 +15,20 @@ export class ValeSettingTab extends PluginSettingTab {
   }
 
   display(): void {
-    // TODO: Migrate
-
-    ReactDOM.render(
+    if (!this.root) {
+      this.root = ReactDOM.createRoot(this.containerEl);
+    }
+    this.root.render(
       <AppContext.Provider value={this.app}>
         <SettingsRouter plugin={this.plugin} />
-      </AppContext.Provider>,
-      this.containerEl
+      </AppContext.Provider>
     );
   }
 
   hide(): void {
-    // TODO: Migrate
-
-    ReactDOM.unmountComponentAtNode(this.containerEl);
+    if (this.root) {
+      this.root.unmount();
+      this.root = null;
+    }
   }
 }

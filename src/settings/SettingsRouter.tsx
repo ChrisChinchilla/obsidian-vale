@@ -1,5 +1,5 @@
-import { useConfigManager } from "hooks";
-import ValePlugin from "main";
+import { useConfigManager } from "../hooks";
+import ValePlugin from "../main";
 import React from "react";
 import { ValeSettings } from "../types";
 import { GeneralSettings } from "./GeneralSettings";
@@ -27,12 +27,12 @@ export const SettingsRouter = ({ plugin }: Props): React.ReactElement => {
   };
 
   React.useEffect(() => {
-    if (settings.type === "cli") {
+    if (settings.type === "cli" && configManager) {
       configManager.configPathExists().then((res) => setValidConfigPath(res));
     } else {
       setValidConfigPath(false);
     }
-  }, [settings]);
+  }, [settings, configManager]);
 
   switch (page) {
     case "General":
@@ -54,6 +54,9 @@ export const SettingsRouter = ({ plugin }: Props): React.ReactElement => {
         </>
       );
     case "Rules":
+      if (!style) {
+        return <div>No style selected</div>;
+      }
       return (
         <RuleSettings
           settings={settings}

@@ -1,3 +1,5 @@
+const DEBUG = process.env.NODE_ENV !== 'production';
+
 export const timed = <T>(label: string, cb: () => Promise<T>): Promise<T> => {
   if (DEBUG) {
     console.log(label + " started");

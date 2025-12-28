@@ -19,7 +19,12 @@ export class ValeRunner {
   run = notConcurrent(
     async (text: string, format: string): Promise<ValeResponse> => {
       return timed("ValeRunner.run()", async () => {
-        if (this.settings.type === "cli") {
+        if (this.settings.type === "server") {
+          return new ValeServer(this.settings.server.url).vale(text, format);
+        } else if (this.settings.type === "cli") {
+          if (!this.configManager) {
+            throw new Error("Config manager not initialized");
+          }
           const [valeExists, configExists] = await Promise.all([
             this.configManager.valePathExists(),
             this.configManager.configPathExists(),
@@ -35,6 +40,7 @@ export class ValeRunner {
           if (!configExists) {
             throw new Error("Couldn't find config file");
           }
+          throw new Error("Vale or config not found");
         } else {
           throw new Error("Unknown runner");
         }

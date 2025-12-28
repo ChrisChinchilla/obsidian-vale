@@ -15,13 +15,13 @@ export const Icon = ({
   size = 16,
   className,
 }: Props): React.ReactElement => {
-  const ref = React.useRef<HTMLDivElement>();
+  const ref = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (ref.current) {
-      setIcon(ref.current, name, size);
+      setIcon(ref.current, name);
     }
-  });
+  }, [name]);
 
   return (
     <div
