@@ -3,6 +3,7 @@ import { spawn } from "child_process";
 import download from "download";
 import * as fs from "fs";
 import { parse, stringify } from "ini";
+import * as os from "os";
 import * as path from "path";
 import { Extract } from "unzipper";
 import { debug } from "../debug";
@@ -26,7 +27,7 @@ export class ValeConfigManager {
       '/opt/homebrew/bin/vale',  // Homebrew on Apple Silicon
       '/usr/local/bin/vale',      // Homebrew on Intel Mac
       '/usr/bin/vale',            // System-wide installation
-      path.join(process.env.HOME || '', '.local/bin/vale'), // User-local installation
+      path.join(os.homedir(), '.local/bin/vale'), // User-local installation
     ];
 
     // Add common Windows installation paths when running on Windows
