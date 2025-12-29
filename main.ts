@@ -11,8 +11,6 @@ import {
 } from 'obsidian';
 import { spawn } from 'child_process';
 import * as path from 'path';
-import { findValeInCommonPaths } from './src/ValeConfigManager';
-
 const execAsync = promisify(exec);
 export interface ValeIssue {
   Action: {
