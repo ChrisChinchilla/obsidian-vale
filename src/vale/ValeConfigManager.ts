@@ -126,7 +126,13 @@ export class ValeConfigManager {
 
       // Set a timeout to avoid hanging indefinitely
       timeoutId = setTimeout(() => {
-        child.kill();
+        try {
+          if (!child.killed) {
+            child.kill();
+          }
+        } catch {
+          // Ignore errors when attempting to kill an already-exited process
+        }
         resolveOnce(false);
       }, 5000);
     });
