@@ -11,7 +11,6 @@ import {
 } from 'obsidian';
 import { spawn } from 'child_process';
 import * as path from 'path';
-const execAsync = promisify(exec);
 export interface ValeIssue {
   Action: {
     Name: string;
