@@ -104,29 +104,37 @@ export class ValeConfigManager {
   private async verifyValeExecutable(valePath: string): Promise<boolean> {
     return new Promise((resolve) => {
       const child = spawn(valePath, ['--version'], {
-        shell: true,
         env: process.env,
       });
 
       let hasOutput = false;
+      let resolved = false;
+
+      const resolveOnce = (value: boolean) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeoutId);
+          resolve(value);
+        }
+      };
 
       child.stdout?.on('data', () => {
         hasOutput = true;
       });
 
       child.on('error', () => {
-        resolve(false);
+        resolveOnce(false);
       });
 
       child.on('close', (code: number) => {
         // Vale --version should exit with code 0 and produce output
-        resolve(code === 0 && hasOutput);
+        resolveOnce(code === 0 && hasOutput);
       });
 
       // Set a timeout to avoid hanging indefinitely
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         child.kill();
-        resolve(false);
+        resolveOnce(false);
       }, 5000);
     });
   }
