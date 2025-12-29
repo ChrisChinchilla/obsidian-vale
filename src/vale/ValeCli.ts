@@ -32,7 +32,6 @@ export class ValeCli {
     // console.log('[Vale] Arguments:', args);
 
     const child = spawn(valePath, args, {
-      shell: true,
       env: process.env,
     });
 
