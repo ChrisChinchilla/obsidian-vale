@@ -5,6 +5,7 @@ import * as fs from "fs";
 import { parse, stringify } from "ini";
 import * as path from "path";
 import { Extract } from "unzipper";
+import { debug } from "../debug";
 import { DEFAULT_VALE_INI, ValeConfig, ValeRule, ValeRuleSeverity, ValeStyle } from "../types";
 
 // ValeManager exposes file operations for working with the Vale configuration
@@ -28,50 +29,39 @@ export class ValeConfigManager {
       path.join(process.env.HOME || '', '.local/bin/vale'), // User-local installation
     ];
 
-    // console.log('[Vale] Searching for vale in common paths:', commonPaths);
-
     for (const valePath of commonPaths) {
       try {
         const stat = await fs.promises.stat(valePath);
         if (stat.isFile()) {
-          // console.log('[Vale] Found vale at:', valePath);
           return valePath;
         }
-        // console.log('[Vale] Path exists but is not a file:', valePath);
       } catch (error) {
-        // console.log('[Vale] Path does not exist:', valePath, error);
+        // Path does not exist, continue searching
       }
     }
 
-    // console.log('[Vale] Vale not found in any common paths');
     return undefined;
   }
 
   async getValePath(): Promise<string> {
     // If explicit path is set, use it
     if (this.valePath) {
-      // console.log('[Vale] Using explicit vale path:', this.valePath);
       return this.valePath;
     }
 
     // If we've already resolved the path, use cached value
     if (this.resolvedValePath) {
-      // console.log('[Vale] Using cached vale path:', this.resolvedValePath);
       return this.resolvedValePath;
     }
-
-    // console.log('[Vale] No explicit path set, searching common locations...');
 
     // Try to find vale in common installation paths
     const foundPath = await this.findValeInCommonPaths();
     if (foundPath) {
       this.resolvedValePath = foundPath;
-      // console.log('[Vale] Resolved vale path:', foundPath);
       return foundPath;
     }
 
     // Fall back to 'vale' and hope it's in PATH
-    // console.log('[Vale] Falling back to "vale" (hoping it\'s in PATH)');
     return 'vale';
   }
 
@@ -386,7 +376,8 @@ export class ValeConfigManager {
         await compressing.tgz.uncompress(input, destinationPath);
       }
     } catch (e) {
-      console.error(e);
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      debug(`[Vale] Failed to install Vale: ${errorMsg}`);
     }
 
     return path.join(
