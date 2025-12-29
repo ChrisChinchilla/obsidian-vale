@@ -362,10 +362,6 @@ export default class ValePlugin extends Plugin {
       });
 
       child.on('close', (code) => {
-        if (stderr && !stderr.includes('warning')) {
-          // console.error('[Vale] stderr:', stderr);
-        }
-
         // Vale returns exit code 0 when there are no issues
         // Vale returns exit code 1 when there are issues (not an error)
         if (code === 0 || code === 1) {
@@ -378,7 +374,7 @@ export default class ValePlugin extends Plugin {
             resolve(issues);
           } catch (parseError) {
             // console.error('[Vale] Failed to parse stdout:', parseError);
-            reject(new Error(`Failed to parse Vale output: ${parseError}`));
+            reject(new Error(`Failed to parse Vale output: ${parseError}. Output: ${stdout.substring(0, 200)}`));
           }
         } else {
           // Vale exited unexpectedly
