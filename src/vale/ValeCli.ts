@@ -56,7 +56,7 @@ export class ValeCli {
 
     return new Promise((resolve, reject) => {
       child.on("error", (error) => {
-        debug(`[Vale] Process error: ${error}`);
+        console.error(`[Vale] Process error: ${error}`);
         reject(error);
       });
 
@@ -81,13 +81,13 @@ export class ValeCli {
             debug(`[Vale] Successfully parsed alerts: ${Object.keys(parsed).length}`);
             resolve(parsed);
           } catch (e) {
-            debug(`[Vale] Failed to parse JSON: ${e}`);
-            debug(`[Vale] stdout was: ${stdout}`);
+            console.error(`[Vale] Failed to parse JSON: ${e}`);
+            console.error(`[Vale] stdout was: ${stdout}`);
             reject(new Error(`Failed to parse Vale output: ${e}`));
           }
         } else {
           // Vale exited unexpectedly.
-          debug(`[Vale] Unexpected exit code: ${code}`);
+          console.error(`[Vale] Unexpected exit code: ${code}`);
           reject(new Error(`Vale exited with code ${code}. stderr: ${stderr}`));
         }
       });

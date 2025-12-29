@@ -26,7 +26,7 @@ export class ValeRunner {
           debug('[ValeRunner] Running in CLI mode');
 
           if (!this.configManager) {
-            debug('[ValeRunner] Config manager not initialized');
+            console.error('[ValeRunner] Config manager not initialized');
             throw new Error("Config manager not initialized");
           }
 
@@ -36,7 +36,7 @@ export class ValeRunner {
 
           if (!valeExists) {
             const valePath = await this.configManager.getValePath();
-            debug(`[ValeRunner] Could not find vale at: ${valePath}`);
+            console.error(`[ValeRunner] Could not find vale at: ${valePath}`);
             throw new Error("Couldn't find vale");
           }
 
@@ -49,7 +49,7 @@ export class ValeRunner {
             const configExists = await this.configManager.configPathExists();
             debug(`[ValeRunner] Config exists: ${configExists}`);
             if (!configExists) {
-              debug(`[ValeRunner] Config file not found at: ${configPath}`);
+              console.error(`[ValeRunner] Config file not found at: ${configPath}`);
               throw new Error("Couldn't find config file at: " + configPath);
             }
           }
