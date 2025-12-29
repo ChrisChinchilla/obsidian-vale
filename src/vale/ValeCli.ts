@@ -2,7 +2,6 @@ import { spawn } from "child_process";
 import { debug } from "../debug";
 import { ValeResponse } from "../types";
 import { ValeConfigManager } from "./ValeConfigManager";
-import { debug } from "../debug";
 
 export class ValeCli {
   configManager: ValeConfigManager;
@@ -28,8 +27,6 @@ export class ValeCli {
 
     // Get Vale path (may be resolved from common installation locations)
     const valePath = await this.configManager.getValePath();
-    // console.log('[Vale] Spawning vale with path:', valePath);
-    // console.log('[Vale] Arguments:', args);
 
     const child = spawn(valePath, args, {
       env: process.env,
