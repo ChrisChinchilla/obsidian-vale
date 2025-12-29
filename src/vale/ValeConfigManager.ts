@@ -29,6 +29,14 @@ export class ValeConfigManager {
       path.join(process.env.HOME || '', '.local/bin/vale'), // User-local installation
     ];
 
+    // Add common Windows installation paths when running on Windows
+    if (process.platform === 'win32') {
+      commonPaths.push(
+        'C:\\\\Program Files\\\\vale\\\\vale.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'vale', 'vale.exe'),
+        path.join(process.env.PROGRAMFILES || '', 'vale', 'vale.exe'),
+      );
+    }
     for (const valePath of commonPaths) {
       try {
         const stat = await fs.promises.stat(valePath);
