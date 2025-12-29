@@ -1,4 +1,5 @@
 import * as compressing from "compressing";
+import { spawn } from "child_process";
 import download from "download";
 import * as fs from "fs";
 import { parse, stringify } from "ini";
@@ -82,16 +83,63 @@ export class ValeConfigManager {
     try {
       const valePath = await this.getValePath();
 
-      // If it's just 'vale' (not a path), we can't check with stat
+      // If it's just 'vale' (not a path), verify it's actually available
+      // by attempting to execute it
       if (valePath === 'vale') {
-        return true; // Assume vale is available in PATH
+        return this.verifyValeExecutable(valePath);
       }
 
       const stat = await fs.promises.stat(valePath);
-      return stat.isFile();
+      if (!stat.isFile()) {
+        return false;
+      }
+
+      // For explicit paths, also verify the binary is executable
+      return this.verifyValeExecutable(valePath);
     } catch {
       return false;
     }
+  }
+
+  private async verifyValeExecutable(valePath: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const child = spawn(valePath, ['--version'], {
+        env: process.env,
+      });
+
+      let hasOutput = false;
+      let resolved = false;
+      let timeoutId: NodeJS.Timeout;
+
+      const resolveOnce = (value: boolean) => {
+        if (!resolved) {
+          resolved = true;
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          resolve(value);
+        }
+      };
+
+      child.stdout?.on('data', () => {
+        hasOutput = true;
+      });
+
+      child.on('error', () => {
+        resolveOnce(false);
+      });
+
+      child.on('close', (code: number) => {
+        // Vale --version should exit with code 0 and produce output
+        resolveOnce(code === 0 && hasOutput);
+      });
+
+      // Set a timeout to avoid hanging indefinitely
+      timeoutId = setTimeout(() => {
+        child.kill();
+        resolveOnce(false);
+      }, 5000);
+    });
   }
 
   async configPathExists(): Promise<boolean> {
