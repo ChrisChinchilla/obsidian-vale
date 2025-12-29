@@ -109,11 +109,14 @@ export class ValeConfigManager {
 
       let hasOutput = false;
       let resolved = false;
+      let timeoutId: NodeJS.Timeout;
 
       const resolveOnce = (value: boolean) => {
         if (!resolved) {
           resolved = true;
-          clearTimeout(timeoutId);
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
           resolve(value);
         }
       };
@@ -132,7 +135,7 @@ export class ValeConfigManager {
       });
 
       // Set a timeout to avoid hanging indefinitely
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         child.kill();
         resolveOnce(false);
       }, 5000);
