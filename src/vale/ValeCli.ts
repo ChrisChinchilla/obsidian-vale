@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import { debug } from "../debug";
 import { ValeResponse } from "../types";
 import { ValeConfigManager } from "./ValeConfigManager";
 import { debug } from "../debug";
