@@ -9,12 +9,13 @@ import {
   TFile,
   debounce
 } from 'obsidian';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import { valeDecorationsExtension, setValeDecorationsEffect } from './src/valeDecorations';
+import { findValeInCommonPaths } from './src/utils';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface ValeIssue {
   Action: {
@@ -280,31 +281,76 @@ export default class ValePlugin extends Plugin {
   }
 
   private async runVale(filepath: string): Promise<ValeIssue[]> {
-    const configArg = this.settings.configPath 
-      ? `--config="${this.settings.configPath}"` 
-      : '';
-    
-    const command = `${this.settings.valePath} --output=JSON ${configArg} "${filepath}"`;
+    // console.log('[Vale] Running vale on file:', filepath);
+
+    // Determine Vale path: use setting if provided, otherwise search common paths
+    let valePath = this.settings.valePath;
+
+    if (!valePath || valePath === 'vale') {
+      // console.log('[Vale] No explicit vale path set, searching common locations...');
+      const foundPath = await findValeInCommonPaths();
+      if (foundPath) {
+        valePath = foundPath;
+        // console.log('[Vale] Using found vale binary:', valePath);
+      } else {
+        // console.log('[Vale] Vale not found in common paths, using "vale" from PATH');
+        valePath = 'vale';
+      }
+    } else {
+      // console.log('[Vale] Using explicit vale path from settings:', valePath);
+    }
+
+    // Get config path (optional)
+    const configPath = this.settings.configPath;
+    // console.log('[Vale] Config path:', configPath || '(using Vale\'s built-in discovery)');
+
+    // Build arguments array for execFile (safer than shell string interpolation)
+    const args = ['--output=JSON'];
+    if (configPath) {
+      args.push(`--config=${configPath}`);
+    }
+    args.push(filepath);
+    // console.log('[Vale] Running vale with args:', args);
+
+    // Run a separate command to detect which config file Vale is using
+    // const configArgs = ['ls-config'];
+    // if (configPath) {
+    //   configArgs.push(`--config=${configPath}`);
+    // }
+    // try {
+    //   const { stdout: configStdout } = await execFileAsync(valePath, configArgs);
+    //   console.log('[Vale] Config file being used:', configStdout.trim());
+    // } catch (e) {
+    //   console.log('[Vale] Could not detect config file (vale ls-config failed)');
+    // }
 
     try {
-      const { stdout, stderr } = await execAsync(command);
-      
+      const { stdout, stderr } = await execFileAsync(valePath, args);
+
       if (stderr && !stderr.includes('warning')) {
+        // console.error('[Vale] stderr:', stderr);
         throw new Error(stderr);
       }
 
+      // console.log('[Vale] stdout length:', stdout?.length || 0);
       const output: ValeOutput = JSON.parse(stdout || '{}');
       const filename = Object.keys(output)[0];
-      
-      return output[filename] || [];
+      const issues = output[filename] || [];
+      // console.log('[Vale] Found', issues.length, 'issues');
+
+      return issues;
     } catch (error) {
+      // console.error('[Vale] Command failed:', error);
       // Vale returns exit code 1 when there are issues, which is not an error
       if (error.stdout) {
         try {
           const output: ValeOutput = JSON.parse(error.stdout);
           const filename = Object.keys(output)[0];
-          return output[filename] || [];
+          const issues = output[filename] || [];
+          // console.log('[Vale] Found', issues.length, 'issues (from error.stdout)');
+          return issues;
         } catch (parseError) {
+          // console.error('[Vale] Failed to parse error.stdout:', parseError);
           throw error;
         }
       }

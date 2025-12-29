@@ -1,6 +1,6 @@
 import * as path from 'path';
+import * as fs from 'fs';
 import { Vault } from 'obsidian';
-import { ValeConfigManager } from './vale/ValeConfigManager';
 
 /**
  * Ensures that a path is absolute. If the path is relative, it will be
@@ -21,15 +21,27 @@ export function ensureAbsolutePath(inputPath: string, vault: Vault): string {
 }
 
 /**
- * Creates a new managed ValeConfigManager instance for the given vault.
- * The managed instance uses the default data directory within the plugin folder.
+ * Searches for Vale binary in common installation paths.
+ * Returns the path if found, undefined otherwise.
  */
-export function newManagedConfigManager(vault: Vault): ValeConfigManager {
-  const dataDir = path.join(vault.configDir, "plugins/obsidian-vale/data");
-  const binaryName = process.platform === "win32" ? "vale.exe" : "vale";
+export async function findValeInCommonPaths(): Promise<string | undefined> {
+  const commonPaths = [
+    '/opt/homebrew/bin/vale',  // Homebrew on Apple Silicon
+    '/usr/local/bin/vale',      // Homebrew on Intel Mac
+    '/usr/bin/vale',            // System-wide installation
+    path.join(process.env.HOME || '', '.local/bin/vale'), // User-local installation
+  ];
 
-  return new ValeConfigManager(
-    ensureAbsolutePath(path.join(dataDir, "bin", binaryName), vault),
-    ensureAbsolutePath(path.join(dataDir, ".vale.ini"), vault)
-  );
+  for (const valePath of commonPaths) {
+    try {
+      const stat = await fs.promises.stat(valePath);
+      if (stat.isFile()) {
+        return valePath;
+      }
+    } catch {
+      // Path doesn't exist, continue
+    }
+  }
+
+  return undefined;
 }
