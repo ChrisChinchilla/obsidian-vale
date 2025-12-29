@@ -28,7 +28,7 @@ export class ValeCli {
     const valePath = await this.configManager.getValePath();
 
     const child = spawn(valePath, args, {
-      shell: true,
+      shell: false,
       env: process.env,
     });
 
