@@ -2,6 +2,7 @@ import { spawn } from "child_process";
 import { debug } from "../debug";
 import { ValeResponse } from "../types";
 import { ValeConfigManager } from "./ValeConfigManager";
+import { debug } from "../debug";
 
 export class ValeCli {
   configManager: ValeConfigManager;
@@ -20,7 +21,7 @@ export class ValeCli {
       debug(`[Vale] Using config file: ${configPath}`);
       args.push("--config", configPath);
     } else {
-      debug('[Vale] No config file specified, using Vale\'s built-in discovery');
+      debug(`[Vale] No config file specified, using Vale's built-in discovery`);
     }
 
     args.push("--ext", format, "--output", "JSON");
@@ -56,7 +57,7 @@ export class ValeCli {
 
     return new Promise((resolve, reject) => {
       child.on("error", (error) => {
-        console.error(`[Vale] Process error: ${error}`);
+        debug(`[Vale] Process error: ${error.message}`);
         reject(error);
       });
 
@@ -71,23 +72,24 @@ export class ValeCli {
 
         if (code === 0) {
           // Vale exited without alerts.
-          debug('[Vale] No alerts found');
+          debug(`[Vale] No alerts found`);
           resolve({});
         } else if (code === 1) {
           // Vale returned alerts.
-          debug('[Vale] Parsing alerts from stdout');
+          debug(`[Vale] Parsing alerts from stdout`);
           try {
             const parsed = JSON.parse(stdout);
             debug(`[Vale] Successfully parsed alerts: ${Object.keys(parsed).length}`);
             resolve(parsed);
           } catch (e) {
-            console.error(`[Vale] Failed to parse JSON: ${e}`);
-            console.error(`[Vale] stdout was: ${stdout}`);
-            reject(new Error(`Failed to parse Vale output: ${e}`));
+            const errorMsg = e instanceof Error ? e.message : String(e);
+            debug(`[Vale] Failed to parse JSON: ${errorMsg}`);
+            debug(`[Vale] stdout was: ${stdout}`);
+            reject(new Error(`Failed to parse Vale output: ${errorMsg}`));
           }
         } else {
           // Vale exited unexpectedly.
-          console.error(`[Vale] Unexpected exit code: ${code}`);
+          debug(`[Vale] Unexpected exit code: ${code}`);
           reject(new Error(`Vale exited with code ${code}. stderr: ${stderr}`));
         }
       });
