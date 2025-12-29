@@ -9,13 +9,10 @@ import {
   TFile,
   debounce
 } from 'obsidian';
-import { exec, spawn } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { valeDecorationsExtension, setValeDecorationsEffect } from './src/valeDecorations';
-
-const execAsync = promisify(exec);
 
 // Helper to find Vale in common installation paths
 async function findValeInCommonPaths(): Promise<string | undefined> {
@@ -350,13 +347,13 @@ export default class ValePlugin extends Plugin {
 
       if (child.stdout) {
         child.stdout.on('data', (data) => {
-          stdout += data;
+          stdout += data.toString();
         });
       }
 
       if (child.stderr) {
         child.stderr.on('data', (data) => {
-          stderr += data;
+          stderr += data.toString();
         });
       }
 
