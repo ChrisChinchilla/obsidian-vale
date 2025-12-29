@@ -146,43 +146,21 @@ export default class ValePlugin extends Plugin {
   // initializeValeRunner rebuilds the config manager and runner. Should be run
   // whenever the settings change.
   initializeValeRunner(): void {
-    this.configManager = undefined;
-    if (this.settings.type === "cli") {
-      if (this.settings.cli.managed) {
-        this.configManager = this.newManagedConfigManager();
-      } else {
-        // In unmanaged mode, both paths are optional
-        // Vale path defaults to 'vale' from system PATH
-        // Config path defaults to Vale's built-in config discovery
-        const valePath = this.settings.cli.valePath || undefined;
-        const configPath = this.settings.cli.configPath
-          ? this.normalizeConfigPath(this.settings.cli.configPath)
-          : undefined;
+    // Both paths are optional
+    // Vale path defaults to 'vale' from system PATH
+    // Config path defaults to Vale's built-in config discovery
+    const valePath = this.settings.valePath || undefined;
+    const configPath = this.settings.configPath
+      ? this.normalizeConfigPath(this.settings.configPath)
+      : undefined;
 
-        this.configManager = new ValeConfigManager(valePath, configPath);
-      }
-    }
-
-    this.runner = new ValeRunner(this.settings, this.configManager);
+    this.configManager = new ValeConfigManager(valePath, configPath);
+    this.runner = new ValeRunner(this.configManager!);
 
     // Detach any leaves that use the old runner.
     this.app.workspace.getLeavesOfType(VIEW_TYPE_VALE).forEach((leaf) => {
       leaf.detach();
     });
-  }
-
-  newManagedConfigManager(): ValeConfigManager {
-    const dataDir = path.join(
-      this.app.vault.configDir,
-      "plugins/obsidian-vale/data"
-    );
-
-    const binaryName = process.platform === "win32" ? "vale.exe" : "vale";
-
-    return new ValeConfigManager(
-      this.normalizeConfigPath(path.join(dataDir, "bin", binaryName)),
-      this.normalizeConfigPath(path.join(dataDir, ".vale.ini"))
-    );
   }
 
   // If config path is relative, then convert it to an absolute path.

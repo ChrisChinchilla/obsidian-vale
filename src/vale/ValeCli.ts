@@ -26,8 +26,6 @@ export class ValeCli {
 
     // Get Vale path (may be resolved from common installation locations)
     const valePath = await this.configManager.getValePath();
-    // console.log('[Vale] Spawning vale with path:', valePath);
-    // console.log('[Vale] Arguments:', args);
 
     const child = spawn(valePath, args, {
       shell: true,
