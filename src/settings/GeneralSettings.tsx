@@ -81,8 +81,8 @@ export const GeneralSettings = ({
 
           if (!settings.cli.managed) {
             new Setting(ref.current)
-              .setName("Vale path")
-              .setDesc("Absolute path to the Vale binary.")
+              .setName("Vale path (optional)")
+              .setDesc("Override path to the Vale binary. Leave empty to use 'vale' from system PATH.")
               .addText((text) => {
                 const component = text.setValue(settings.cli.valePath || "");
 
@@ -100,8 +100,8 @@ export const GeneralSettings = ({
               });
 
             new Setting(ref.current)
-              .setName("Config path")
-              .setDesc("Absolute path to a Vale config file.")
+              .setName("Config path (optional)")
+              .setDesc("Override Vale's default config discovery. Leave empty to let Vale search for .vale.ini in the current directory and parent directories.")
               .addText((text) => {
                 const component = text.setValue(settings.cli.configPath || "");
 

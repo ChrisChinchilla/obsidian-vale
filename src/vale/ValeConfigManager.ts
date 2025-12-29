@@ -9,32 +9,98 @@ import { DEFAULT_VALE_INI, ValeConfig, ValeRule, ValeRuleSeverity, ValeStyle } f
 // ValeManager exposes file operations for working with the Vale configuration
 // file and styles.
 export class ValeConfigManager {
-  private valePath: string;
-  private configPath: string;
+  private valePath?: string;
+  private configPath?: string;
+  private resolvedValePath?: string;
 
-  constructor(valePath: string, configPath: string) {
+  constructor(valePath?: string, configPath?: string) {
     this.valePath = valePath;
     this.configPath = configPath;
   }
 
-  getValePath(): string {
-    return this.valePath;
+  private async findValeInCommonPaths(): Promise<string | undefined> {
+    // Common installation paths for Vale, especially from Homebrew
+    const commonPaths = [
+      '/opt/homebrew/bin/vale',  // Homebrew on Apple Silicon
+      '/usr/local/bin/vale',      // Homebrew on Intel Mac
+      '/usr/bin/vale',            // System-wide installation
+      path.join(process.env.HOME || '', '.local/bin/vale'), // User-local installation
+    ];
+
+    // console.log('[Vale] Searching for vale in common paths:', commonPaths);
+
+    for (const valePath of commonPaths) {
+      try {
+        const stat = await fs.promises.stat(valePath);
+        if (stat.isFile()) {
+          // console.log('[Vale] Found vale at:', valePath);
+          return valePath;
+        }
+        // console.log('[Vale] Path exists but is not a file:', valePath);
+      } catch (error) {
+        // console.log('[Vale] Path does not exist:', valePath, error);
+      }
+    }
+
+    // console.log('[Vale] Vale not found in any common paths');
+    return undefined;
   }
 
-  getConfigPath(): string {
+  async getValePath(): Promise<string> {
+    // If explicit path is set, use it
+    if (this.valePath) {
+      // console.log('[Vale] Using explicit vale path:', this.valePath);
+      return this.valePath;
+    }
+
+    // If we've already resolved the path, use cached value
+    if (this.resolvedValePath) {
+      // console.log('[Vale] Using cached vale path:', this.resolvedValePath);
+      return this.resolvedValePath;
+    }
+
+    // console.log('[Vale] No explicit path set, searching common locations...');
+
+    // Try to find vale in common installation paths
+    const foundPath = await this.findValeInCommonPaths();
+    if (foundPath) {
+      this.resolvedValePath = foundPath;
+      // console.log('[Vale] Resolved vale path:', foundPath);
+      return foundPath;
+    }
+
+    // Fall back to 'vale' and hope it's in PATH
+    // console.log('[Vale] Falling back to "vale" (hoping it\'s in PATH)');
+    return 'vale';
+  }
+
+  getConfigPath(): string | undefined {
     return this.configPath;
   }
 
   async valePathExists(): Promise<boolean> {
-    return fs.promises
-      .stat(this.valePath)
-      .then((stat) => stat.isFile())
-      .catch(() => false);
+    try {
+      const valePath = await this.getValePath();
+
+      // If it's just 'vale' (not a path), we can't check with stat
+      if (valePath === 'vale') {
+        return true; // Assume vale is available in PATH
+      }
+
+      const stat = await fs.promises.stat(valePath);
+      return stat.isFile();
+    } catch {
+      return false;
+    }
   }
 
   async configPathExists(): Promise<boolean> {
+    const configPath = this.configPath;
+    if (!configPath) {
+      return false;
+    }
     return fs.promises
-      .stat(this.configPath)
+      .stat(configPath)
       .then((stat) => stat.isFile())
       .catch(() => false);
   }
@@ -86,14 +152,22 @@ export class ValeConfigManager {
   }
 
   async loadConfig(): Promise<ValeConfig> {
+    const configPath = this.configPath;
+    if (!configPath) {
+      throw new Error('Config path not set');
+    }
     return parse(
-      await fs.promises.readFile(this.configPath, "utf-8")
+      await fs.promises.readFile(configPath, "utf-8")
     ) as ValeConfig;
   }
 
   async saveConfig(config: ValeConfig): Promise<void> {
-    await fs.promises.mkdir(path.dirname(this.configPath), { recursive: true });
-    return fs.promises.writeFile(this.configPath, stringify(config), {
+    const configPath = this.configPath;
+    if (!configPath) {
+      throw new Error('Config path not set');
+    }
+    await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+    return fs.promises.writeFile(configPath, stringify(config), {
       encoding: "utf-8",
     });
   }
@@ -101,12 +175,13 @@ export class ValeConfigManager {
   async getStylesPath(): Promise<string | undefined> {
     const config = await this.loadConfig();
     const stylesPath = config.StylesPath as string;
+    const configPath = this.configPath;
 
-    if (!stylesPath) {
+    if (!stylesPath || !configPath) {
       return undefined;
     }
 
-    return path.join(path.dirname(this.configPath), stylesPath);
+    return path.join(path.dirname(configPath), stylesPath);
   }
 
   /**
@@ -243,9 +318,13 @@ export class ValeConfigManager {
     };
 
     const url = releaseUrl(process.platform);
+    const configPath = this.getConfigPath();
+    if (!configPath) {
+      throw new Error('Config path not set');
+    }
 
     const zipPath = path.join(
-      path.dirname(this.getConfigPath()),
+      path.dirname(configPath),
       path.basename(url)
     );
 

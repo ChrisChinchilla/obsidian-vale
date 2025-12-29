@@ -12,9 +12,37 @@ import {
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
+import * as fs from 'fs';
 import { valeDecorationsExtension, setValeDecorationsEffect } from './src/valeDecorations';
 
 const execAsync = promisify(exec);
+
+// Helper to find Vale in common installation paths
+async function findValeInCommonPaths(): Promise<string | undefined> {
+  const commonPaths = [
+    '/opt/homebrew/bin/vale',  // Homebrew on Apple Silicon
+    '/usr/local/bin/vale',      // Homebrew on Intel Mac
+    '/usr/bin/vale',            // System-wide installation
+    path.join(process.env.HOME || '', '.local/bin/vale'), // User-local installation
+  ];
+
+  // console.log('[Vale] Searching for vale in common paths:', commonPaths);
+
+  for (const valePath of commonPaths) {
+    try {
+      const stat = await fs.promises.stat(valePath);
+      if (stat.isFile()) {
+        // console.log('[Vale] Found vale at:', valePath);
+        return valePath;
+      }
+    } catch {
+      // Path doesn't exist, continue
+    }
+  }
+
+  // console.log('[Vale] Vale not found in any common paths');
+  return undefined;
+}
 
 export interface ValeIssue {
   Action: {
@@ -280,31 +308,69 @@ export default class ValePlugin extends Plugin {
   }
 
   private async runVale(filepath: string): Promise<ValeIssue[]> {
-    const configArg = this.settings.configPath 
-      ? `--config="${this.settings.configPath}"` 
-      : '';
-    
-    const command = `${this.settings.valePath} --output=JSON ${configArg} "${filepath}"`;
+    // console.log('[Vale] Running vale on file:', filepath);
+
+    // Determine Vale path: use setting if provided, otherwise search common paths
+    let valePath = this.settings.valePath;
+
+    if (!valePath || valePath === 'vale') {
+      // console.log('[Vale] No explicit vale path set, searching common locations...');
+      const foundPath = await findValeInCommonPaths();
+      if (foundPath) {
+        valePath = foundPath;
+        // console.log('[Vale] Using found vale binary:', valePath);
+      } else {
+        // console.log('[Vale] Vale not found in common paths, using "vale" from PATH');
+        valePath = 'vale';
+      }
+    } else {
+      // console.log('[Vale] Using explicit vale path from settings:', valePath);
+    }
+
+    // Get config path (optional)
+    const configPath = this.settings.configPath;
+    const configArg = configPath ? `--config="${configPath}"` : '';
+    // console.log('[Vale] Config path:', configPath || '(using Vale\'s built-in discovery)');
+
+    const command = `"${valePath}" --output=JSON ${configArg} "${filepath}"`;
+    // console.log('[Vale] Running command:', command);
+
+    // Run a separate command to detect which config file Vale is using
+    // const configDetectCmd = `"${valePath}" ls-config ${configArg}`;
+    // try {
+    //   const { stdout: configStdout } = await execAsync(configDetectCmd);
+    //   console.log('[Vale] Config file being used:', configStdout.trim());
+    // } catch (e) {
+    //   console.log('[Vale] Could not detect config file (vale ls-config failed)');
+    // }
 
     try {
       const { stdout, stderr } = await execAsync(command);
-      
+
       if (stderr && !stderr.includes('warning')) {
+        // console.error('[Vale] stderr:', stderr);
         throw new Error(stderr);
       }
 
+      // console.log('[Vale] stdout length:', stdout?.length || 0);
       const output: ValeOutput = JSON.parse(stdout || '{}');
       const filename = Object.keys(output)[0];
-      
-      return output[filename] || [];
+      const issues = output[filename] || [];
+      // console.log('[Vale] Found', issues.length, 'issues');
+
+      return issues;
     } catch (error) {
+      // console.error('[Vale] Command failed:', error);
       // Vale returns exit code 1 when there are issues, which is not an error
       if (error.stdout) {
         try {
           const output: ValeOutput = JSON.parse(error.stdout);
           const filename = Object.keys(output)[0];
-          return output[filename] || [];
+          const issues = output[filename] || [];
+          // console.log('[Vale] Found', issues.length, 'issues (from error.stdout)');
+          return issues;
         } catch (parseError) {
+          // console.error('[Vale] Failed to parse error.stdout:', parseError);
           throw error;
         }
       }

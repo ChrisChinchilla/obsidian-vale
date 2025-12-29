@@ -23,25 +23,39 @@ export class ValeRunner {
         if (this.settings.type === "server") {
           return new ValeServer(this.settings.server.url).vale(text, format);
         } else if (this.settings.type === "cli") {
+          console.log('[ValeRunner] Running in CLI mode');
+
           if (!this.configManager) {
+            console.error('[ValeRunner] Config manager not initialized');
             throw new Error("Config manager not initialized");
           }
-          const [valeExists, configExists] = await Promise.all([
-            this.configManager.valePathExists(),
-            this.configManager.configPathExists(),
-          ]);
 
-          if (valeExists && configExists) {
-            return new ValeCli(this.configManager).vale(text, format);
-          }
+          console.log('[ValeRunner] Checking if vale exists...');
+          const valeExists = await this.configManager.valePathExists();
+          console.log('[ValeRunner] Vale exists:', valeExists);
 
           if (!valeExists) {
+            const valePath = await this.configManager.getValePath();
+            console.error('[ValeRunner] Could not find vale at:', valePath);
             throw new Error("Couldn't find vale");
           }
-          if (!configExists) {
-            throw new Error("Couldn't find config file");
+
+          // If a config path is explicitly set, verify it exists
+          // Otherwise, let Vale use its built-in config discovery
+          const configPath = this.configManager.getConfigPath();
+          console.log('[ValeRunner] Config path:', configPath || '(using Vale discovery)');
+
+          if (configPath) {
+            const configExists = await this.configManager.configPathExists();
+            console.log('[ValeRunner] Config exists:', configExists);
+            if (!configExists) {
+              console.error('[ValeRunner] Config file not found at:', configPath);
+              throw new Error("Couldn't find config file at: " + configPath);
+            }
           }
-          throw new Error("Vale or config not found");
+
+          console.log('[ValeRunner] Starting Vale CLI check...');
+          return new ValeCli(this.configManager).vale(text, format);
         } else {
           throw new Error("Unknown runner");
         }

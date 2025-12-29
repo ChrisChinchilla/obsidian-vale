@@ -151,10 +151,15 @@ export default class ValePlugin extends Plugin {
       if (this.settings.cli.managed) {
         this.configManager = this.newManagedConfigManager();
       } else {
-        this.configManager = new ValeConfigManager(
-          this.settings.cli.valePath!,
-          this.normalizeConfigPath(this.settings.cli.configPath!)
-        );
+        // In unmanaged mode, both paths are optional
+        // Vale path defaults to 'vale' from system PATH
+        // Config path defaults to Vale's built-in config discovery
+        const valePath = this.settings.cli.valePath || undefined;
+        const configPath = this.settings.cli.configPath
+          ? this.normalizeConfigPath(this.settings.cli.configPath)
+          : undefined;
+
+        this.configManager = new ValeConfigManager(valePath, configPath);
       }
     }
 
