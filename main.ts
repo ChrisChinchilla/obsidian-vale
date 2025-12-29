@@ -11,6 +11,7 @@ import {
 } from 'obsidian';
 import { spawn } from 'child_process';
 import * as path from 'path';
+import { ValeConfigManager } from './src/vale/ValeConfigManager';
 export interface ValeIssue {
   Action: {
     Name: string;
@@ -61,9 +62,16 @@ export default class ValePlugin extends Plugin {
   public currentIssues: Map<string, ValeIssue[]> = new Map();
   private debouncedCheck: any;
   private statusBarItem: HTMLElement;
+  private valeConfigManager: ValeConfigManager;
 
   async onload() {
     await this.loadSettings();
+
+    // Initialize ValeConfigManager with settings
+    this.valeConfigManager = new ValeConfigManager(
+      this.settings.valePath,
+      this.settings.configPath
+    );
 
     // Add status bar item
     this.statusBarItem = this.addStatusBarItem();
@@ -172,6 +180,11 @@ export default class ValePlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+    // Update ValeConfigManager with new settings
+    this.valeConfigManager = new ValeConfigManager(
+      this.settings.valePath,
+      this.settings.configPath
+    );
   }
 
   private addStyles() {
@@ -277,22 +290,8 @@ export default class ValePlugin extends Plugin {
   private async runVale(filepath: string): Promise<ValeIssue[]> {
     // console.log('[Vale] Running vale on file:', filepath);
 
-    // Determine Vale path: use setting if provided, otherwise search common paths
-    let valePath = this.settings.valePath;
-
-    if (!valePath || valePath === 'vale') {
-      // console.log('[Vale] No explicit vale path set, searching common locations...');
-      const foundPath = await findValeInCommonPaths();
-      if (foundPath) {
-        valePath = foundPath;
-        // console.log('[Vale] Using found vale binary:', valePath);
-      } else {
-        // console.log('[Vale] Vale not found in common paths, using "vale" from PATH');
-        valePath = 'vale';
-      }
-    } else {
-      // console.log('[Vale] Using explicit vale path from settings:', valePath);
-    }
+    // Determine Vale path using ValeConfigManager
+    const valePath = await this.valeConfigManager.getValePath();
 
     // Build arguments array
     const args = ['--output=JSON'];
