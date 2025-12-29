@@ -32,24 +32,24 @@ export class ValeRunner {
 
           debug('[ValeRunner] Checking if vale exists...');
           const valeExists = await this.configManager.valePathExists();
-          debug('[ValeRunner] Vale exists: ' + valeExists);
+          debug(`[ValeRunner] Vale exists: ${valeExists}`);
 
           if (!valeExists) {
             const valePath = await this.configManager.getValePath();
-            debug('[ValeRunner] Could not find vale at: ' + valePath);
+            debug(`[ValeRunner] Could not find vale at: ${valePath}`);
             throw new Error("Couldn't find vale");
           }
 
           // If a config path is explicitly set, verify it exists
           // Otherwise, let Vale use its built-in config discovery
           const configPath = this.configManager.getConfigPath();
-          debug('[ValeRunner] Config path: ' + (configPath || '(using Vale discovery)'));
+          debug(`[ValeRunner] Config path: ${configPath || '(using Vale discovery)'}`);
 
           if (configPath) {
             const configExists = await this.configManager.configPathExists();
-            debug('[ValeRunner] Config exists: ' + configExists);
+            debug(`[ValeRunner] Config exists: ${configExists}`);
             if (!configExists) {
-              debug('[ValeRunner] Config file not found at: ' + configPath);
+              debug(`[ValeRunner] Config file not found at: ${configPath}`);
               throw new Error("Couldn't find config file at: " + configPath);
             }
           }
