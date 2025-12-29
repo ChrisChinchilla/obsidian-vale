@@ -84,7 +84,7 @@ export class ValeCli {
             const errorMsg = e instanceof Error ? e.message : String(e);
             debug(`[Vale] Failed to parse JSON: ${errorMsg}`);
             debug(`[Vale] stdout was: ${stdout}`);
-            reject(new Error(`Failed to parse Vale output: ${e}`));
+            reject(new Error(`Failed to parse Vale output: ${errorMsg}`));
           }
         } else {
           // Vale exited unexpectedly.
