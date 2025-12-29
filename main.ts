@@ -11,9 +11,32 @@ import {
 } from 'obsidian';
 import { spawn } from 'child_process';
 import * as path from 'path';
-import { findValeInCommonPaths } from './src/ValeConfigManager';
+import * as fs from 'fs';
+import { valeDecorationsExtension, setValeDecorationsEffect } from './src/valeDecorations';
 
-const execAsync = promisify(exec);
+// Helper to find Vale in common installation paths
+async function findValeInCommonPaths(): Promise<string | undefined> {
+  const commonPaths = [
+    '/opt/homebrew/bin/vale',  // Homebrew on Apple Silicon
+    '/usr/local/bin/vale',      // Homebrew on Intel Mac
+    '/usr/bin/vale',            // System-wide installation
+    path.join(process.env.HOME || '', '.local/bin/vale'), // User-local installation
+  ];
+
+  for (const valePath of commonPaths) {
+    try {
+      const stat = await fs.promises.stat(valePath);
+      if (stat.isFile()) {
+        return valePath;
+      }
+    } catch {
+      // Path doesn't exist, continue
+    }
+  }
+
+  return undefined;
+}
+
 export interface ValeIssue {
   Action: {
     Name: string;
