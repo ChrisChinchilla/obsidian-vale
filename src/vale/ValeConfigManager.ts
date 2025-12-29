@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { findValeInCommonPaths } from "../utils";
 
 // ValeConfigManager handles Vale binary and config file path resolution.
 export class ValeConfigManager {
@@ -10,29 +11,6 @@ export class ValeConfigManager {
   constructor(valePath?: string, configPath?: string) {
     this.valePath = valePath;
     this.configPath = configPath;
-  }
-
-  private async findValeInCommonPaths(): Promise<string | undefined> {
-    // Common installation paths for Vale, especially from Homebrew
-    const commonPaths = [
-      '/opt/homebrew/bin/vale',  // Homebrew on Apple Silicon
-      '/usr/local/bin/vale',      // Homebrew on Intel Mac
-      '/usr/bin/vale',            // System-wide installation
-      path.join(process.env.HOME || '', '.local/bin/vale'), // User-local installation
-    ];
-
-    for (const valePath of commonPaths) {
-      try {
-        const stat = await fs.promises.stat(valePath);
-        if (stat.isFile()) {
-          return valePath;
-        }
-      } catch (error) {
-        // Path doesn't exist, continue
-      }
-    }
-
-    return undefined;
   }
 
   async getValePath(): Promise<string> {
@@ -47,7 +25,7 @@ export class ValeConfigManager {
     }
 
     // Try to find vale in common installation paths
-    const foundPath = await this.findValeInCommonPaths();
+    const foundPath = await findValeInCommonPaths();
     if (foundPath) {
       this.resolvedValePath = foundPath;
       return foundPath;
