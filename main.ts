@@ -9,13 +9,10 @@ import {
   TFile,
   debounce
 } from 'obsidian';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { valeDecorationsExtension, setValeDecorationsEffect } from './src/valeDecorations';
-
-const execAsync = promisify(exec);
 
 // Helper to find Vale in common installation paths
 async function findValeInCommonPaths(): Promise<string | undefined> {
@@ -327,55 +324,64 @@ export default class ValePlugin extends Plugin {
       // console.log('[Vale] Using explicit vale path from settings:', valePath);
     }
 
+    // Build arguments array
+    const args = ['--output=JSON'];
+    
     // Get config path (optional)
     const configPath = this.settings.configPath;
-    const configArg = configPath ? `--config="${configPath}"` : '';
-    // console.log('[Vale] Config path:', configPath || '(using Vale\'s built-in discovery)');
-
-    const command = `"${valePath}" --output=JSON ${configArg} "${filepath}"`;
-    // console.log('[Vale] Running command:', command);
-
-    // Run a separate command to detect which config file Vale is using
-    // const configDetectCmd = `"${valePath}" ls-config ${configArg}`;
-    // try {
-    //   const { stdout: configStdout } = await execAsync(configDetectCmd);
-    //   console.log('[Vale] Config file being used:', configStdout.trim());
-    // } catch (e) {
-    //   console.log('[Vale] Could not detect config file (vale ls-config failed)');
-    // }
-
-    try {
-      const { stdout, stderr } = await execAsync(command);
-
-      if (stderr && !stderr.includes('warning')) {
-        // console.error('[Vale] stderr:', stderr);
-        throw new Error(stderr);
-      }
-
-      // console.log('[Vale] stdout length:', stdout?.length || 0);
-      const output: ValeOutput = JSON.parse(stdout || '{}');
-      const filename = Object.keys(output)[0];
-      const issues = output[filename] || [];
-      // console.log('[Vale] Found', issues.length, 'issues');
-
-      return issues;
-    } catch (error) {
-      // console.error('[Vale] Command failed:', error);
-      // Vale returns exit code 1 when there are issues, which is not an error
-      if (error.stdout) {
-        try {
-          const output: ValeOutput = JSON.parse(error.stdout);
-          const filename = Object.keys(output)[0];
-          const issues = output[filename] || [];
-          // console.log('[Vale] Found', issues.length, 'issues (from error.stdout)');
-          return issues;
-        } catch (parseError) {
-          // console.error('[Vale] Failed to parse error.stdout:', parseError);
-          throw error;
-        }
-      }
-      throw error;
+    if (configPath) {
+      args.push('--config', configPath);
     }
+    
+    args.push(filepath);
+    // console.log('[Vale] Running with args:', args);
+
+    return new Promise((resolve, reject) => {
+      const child = spawn(valePath, args, {
+        shell: false,
+        env: process.env,
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      if (child.stdout) {
+        child.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+      }
+
+      if (child.stderr) {
+        child.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+      }
+
+      child.on('error', (error) => {
+        reject(error);
+      });
+
+      child.on('close', (code) => {
+        // Vale returns exit code 0 when there are no issues
+        // Vale returns exit code 1 when there are issues (not an error)
+        if (code === 0 || code === 1) {
+          try {
+            // console.log('[Vale] stdout length:', stdout?.length || 0);
+            const output: ValeOutput = JSON.parse(stdout || '{}');
+            const filename = Object.keys(output)[0];
+            const issues = output[filename] || [];
+            // console.log('[Vale] Found', issues.length, 'issues');
+            resolve(issues);
+          } catch (parseError) {
+            // console.error('[Vale] Failed to parse stdout:', parseError);
+            reject(new Error(`Failed to parse Vale output: ${parseError}. Output: ${stdout.substring(0, 200)}`));
+          }
+        } else {
+          // Vale exited unexpectedly
+          reject(new Error(`Vale exited with code ${code}. stderr: ${stderr}`));
+        }
+      });
+    });
   }
 
   public applyDecorations(editor: Editor, issues: ValeIssue[]) {
