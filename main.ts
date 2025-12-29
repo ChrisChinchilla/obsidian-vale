@@ -9,13 +9,13 @@ import {
   TFile,
   debounce
 } from 'obsidian';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
 import { valeDecorationsExtension, setValeDecorationsEffect } from './src/valeDecorations';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // Helper to find Vale in common installation paths
 async function findValeInCommonPaths(): Promise<string | undefined> {
@@ -329,23 +329,30 @@ export default class ValePlugin extends Plugin {
 
     // Get config path (optional)
     const configPath = this.settings.configPath;
-    const configArg = configPath ? `--config="${configPath}"` : '';
     // console.log('[Vale] Config path:', configPath || '(using Vale\'s built-in discovery)');
 
-    const command = `"${valePath}" --output=JSON ${configArg} "${filepath}"`;
-    // console.log('[Vale] Running command:', command);
+    // Build arguments array for execFile (safer than shell string interpolation)
+    const args = ['--output=JSON'];
+    if (configPath) {
+      args.push(`--config=${configPath}`);
+    }
+    args.push(filepath);
+    // console.log('[Vale] Running vale with args:', args);
 
     // Run a separate command to detect which config file Vale is using
-    // const configDetectCmd = `"${valePath}" ls-config ${configArg}`;
+    // const configArgs = ['ls-config'];
+    // if (configPath) {
+    //   configArgs.push(`--config=${configPath}`);
+    // }
     // try {
-    //   const { stdout: configStdout } = await execAsync(configDetectCmd);
+    //   const { stdout: configStdout } = await execFileAsync(valePath, configArgs);
     //   console.log('[Vale] Config file being used:', configStdout.trim());
     // } catch (e) {
     //   console.log('[Vale] Could not detect config file (vale ls-config failed)');
     // }
 
     try {
-      const { stdout, stderr } = await execAsync(command);
+      const { stdout, stderr } = await execFileAsync(valePath, args);
 
       if (stderr && !stderr.includes('warning')) {
         // console.error('[Vale] stderr:', stderr);
