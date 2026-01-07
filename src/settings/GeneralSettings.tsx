@@ -27,7 +27,7 @@ export const GeneralSettings = ({
             component.inputEl.onblur = (value) => {
               onSettingsChange({
                 ...settings,
-                valePath: (value.currentTarget as any).value,
+                valePath: (value.currentTarget as HTMLInputElement).value,
               });
             };
 
@@ -43,7 +43,7 @@ export const GeneralSettings = ({
             component.inputEl.onblur = (value) => {
               onSettingsChange({
                 ...settings,
-                configPath: (value.currentTarget as any).value,
+                configPath: (value.currentTarget as HTMLInputElement).value,
               });
             };
 

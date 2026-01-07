@@ -15,11 +15,11 @@ export class ValeRunner {
   run = notConcurrent(
     async (text: string, format: string): Promise<ValeResponse> => {
       return timed("ValeRunner.run()", async () => {
-        console.log('[ValeRunner] Running Vale CLI check');
+        console.debug('[ValeRunner] Running Vale CLI check');
 
-        console.log('[ValeRunner] Checking if vale exists...');
+        console.debug('[ValeRunner] Checking if vale exists...');
         const valeExists = await this.configManager.valePathExists();
-        console.log('[ValeRunner] Vale exists:', valeExists);
+        console.debug('[ValeRunner] Vale exists:', valeExists);
 
         if (!valeExists) {
           const valePath = await this.configManager.getValePath();
@@ -30,18 +30,18 @@ export class ValeRunner {
         // If a config path is explicitly set, verify it exists
         // Otherwise, let Vale use its built-in config discovery
         const configPath = this.configManager.getConfigPath();
-        console.log('[ValeRunner] Config path:', configPath || '(using Vale discovery)');
+        console.debug('[ValeRunner] Config path:', configPath || '(using Vale discovery)');
 
         if (configPath) {
           const configExists = await this.configManager.configPathExists();
-          console.log('[ValeRunner] Config exists:', configExists);
+          console.debug('[ValeRunner] Config exists:', configExists);
           if (!configExists) {
             console.error('[ValeRunner] Config file not found at:', configPath);
             throw new Error("Couldn't find config file at: " + configPath);
           }
         }
 
-        console.log('[ValeRunner] Starting Vale CLI check...');
+        console.debug('[ValeRunner] Starting Vale CLI check...');
         return new ValeCli(this.configManager).vale(text, format);
       });
     }

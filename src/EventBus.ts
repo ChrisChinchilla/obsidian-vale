@@ -10,14 +10,13 @@ type EventType =
 // The main purpose of the event bus is to issue commands to the React
 // application.
 export class EventBus {
-  private subscribers: Record<string, Function>;
+  private subscribers: Record<string, (msg: unknown) => void>;
 
   constructor() {
     this.subscribers = {};
   }
 
-  // TODO: Make type-safe rather than relying on Function.
-  on(topic: EventType, cb: Function): () => void {
+  on(topic: EventType, cb: (msg: unknown) => void): () => void {
     debug(`Registering subscriber for topic "${topic}"`);
     this.subscribers[topic] = cb;
 

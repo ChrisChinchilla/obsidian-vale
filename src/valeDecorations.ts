@@ -53,7 +53,10 @@ async function getSpellingSuggestions(word: string): Promise<string[]> {
 /**
  * Calculate the absolute position range for a Vale issue in the document
  */
-function calculateIssuePosition(issue: ValeIssue, doc: any): { from: number; to: number } | null {
+function calculateIssuePosition(
+  issue: ValeIssue,
+  doc: { lines: number; length: number; line: (num: number) => { from: number } }
+): { from: number; to: number } | null {
   const line = issue.Line - 1; // Vale uses 1-indexed lines
 
   if (line < 0 || line >= doc.lines) {
@@ -329,7 +332,10 @@ function createActionUI(view: EditorView, issue: ValeIssue): HTMLElement | null 
 /**
  * Create decorations from Vale issues
  */
-function createDecorations(issues: ValeIssue[], doc: any): DecorationSet {
+function createDecorations(
+  issues: ValeIssue[],
+  doc: { lines: number; length: number; line: (num: number) => { from: number } }
+): DecorationSet {
   currentIssues = issues;
   const builder = new RangeSetBuilder<Decoration>();
 

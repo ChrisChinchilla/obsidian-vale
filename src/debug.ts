@@ -2,7 +2,7 @@ const DEBUG = process.env.NODE_ENV !== 'production';
 
 export const timed = <T>(label: string, cb: () => Promise<T>): Promise<T> => {
   if (DEBUG) {
-    console.log(label + " started");
+    console.debug(label + " started");
     console.time(label + " finished in");
     const res = cb().finally(() => {
       console.timeEnd(label + " finished in");
@@ -14,6 +14,6 @@ export const timed = <T>(label: string, cb: () => Promise<T>): Promise<T> => {
 
 export const debug = (msg: string): void => {
   if (DEBUG) {
-    console.log(msg);
+    console.debug(msg);
   }
 };

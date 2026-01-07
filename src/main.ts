@@ -92,16 +92,20 @@ export default class ValePlugin extends Plugin {
   }
 
   // onunload runs when plugin becomes disabled.
-  async onunload(): Promise<void> {
+  onunload(): void {
     // Remove all open Vale leaves.
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_VALE);
 
     // Remove all marks from the previous check.
-    if ((this.app.workspace as any).iterateCodeMirrors) {
-      (this.app.workspace as any).iterateCodeMirrors((cm: any) => {
+    type WorkspaceWithCodeMirrors = {
+      iterateCodeMirrors?: (callback: (cm: CodeMirror.Editor) => void) => void;
+    };
+
+    if ((this.app.workspace as WorkspaceWithCodeMirrors).iterateCodeMirrors) {
+      (this.app.workspace as WorkspaceWithCodeMirrors).iterateCodeMirrors!((cm: CodeMirror.Editor) => {
         cm.getAllMarks()
-          .filter((mark: any) => !!mark.className?.contains("vale-underline"))
-          .forEach((mark: any) => mark.clear());
+          .filter((mark) => !!mark.className?.contains("vale-underline"))
+          .forEach((mark) => mark.clear());
       });
     }
 
@@ -127,7 +131,6 @@ export default class ValePlugin extends Plugin {
       this.app.workspace.revealLeaf(leaf);
 
       if (leaf.view instanceof ValeView) {
-        console.log("vale view");
         leaf.view.runValeCheck();
       }
     });
@@ -319,7 +322,13 @@ export default class ValePlugin extends Plugin {
       return;
     }
 
-    const editor = (view as any).sourceMode?.cmEditor || (view as any).editor?.cm;
+    type ViewWithEditor = {
+      sourceMode?: { cmEditor?: CodeMirror.Editor };
+      editor?: { cm?: CodeMirror.Editor };
+    };
+
+    const viewWithEditor = view as ViewWithEditor;
+    const editor = viewWithEditor.sourceMode?.cmEditor || viewWithEditor.editor?.cm;
     if (editor) {
       callback(editor, view);
     }

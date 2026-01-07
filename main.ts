@@ -6,7 +6,6 @@ import {
   PluginSettingTab,
   Setting,
   Notice,
-  TFile,
   debounce
 } from 'obsidian';
 import { execFile } from 'child_process';
@@ -65,7 +64,7 @@ const DEFAULT_SETTINGS: ValePluginSettings = {
 export default class ValePlugin extends Plugin {
   settings: ValePluginSettings;
   public currentIssues: Map<string, ValeIssue[]> = new Map();
-  private debouncedCheck: any;
+  private debouncedCheck: () => void;
   private statusBarItem: HTMLElement;
 
   async onload() {
@@ -77,6 +76,9 @@ export default class ValePlugin extends Plugin {
 
     // Register CodeMirror 6 extension for Vale decorations
     this.registerEditorExtension(valeDecorationsExtension);
+
+    // Apply custom color CSS variables
+    this.updateStyleVariables();
 
     // Create debounced check function
     this.debouncedCheck = debounce(
@@ -102,7 +104,7 @@ export default class ValePlugin extends Plugin {
       name: 'Toggle auto-check',
       callback: () => {
         this.settings.enableAutoCheck = !this.settings.enableAutoCheck;
-        this.saveSettings();
+        this.saveSettings().catch(console.error);
         new Notice(`Vale auto-check ${this.settings.enableAutoCheck ? 'enabled' : 'disabled'}`);
       }
     });
@@ -112,7 +114,7 @@ export default class ValePlugin extends Plugin {
       name: 'Toggle inline decorations',
       callback: () => {
         this.settings.enableInlineDecorations = !this.settings.enableInlineDecorations;
-        this.saveSettings();
+        this.saveSettings().catch(console.error);
 
         // Refresh decorations based on new setting
         if (this.settings.enableInlineDecorations) {
@@ -164,8 +166,6 @@ export default class ValePlugin extends Plugin {
       })
     );
 
-    // Add CSS for decorations
-    this.addStyles();
   }
 
   onunload() {
@@ -178,52 +178,13 @@ export default class ValePlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+    this.updateStyleVariables();
   }
 
-  private addStyles() {
-    const style = document.createElement('style');
-    style.textContent = `
-      .vale-error {
-        text-decoration: underline wavy ${this.settings.severityColors.error};
-        text-decoration-thickness: 2px;
-      }
-      .vale-warning {
-        text-decoration: underline wavy ${this.settings.severityColors.warning};
-        text-decoration-thickness: 1.5px;
-      }
-      .vale-suggestion {
-        text-decoration: underline dotted ${this.settings.severityColors.suggestion};
-        text-decoration-thickness: 1px;
-      }
-      .vale-tooltip {
-        position: absolute;
-        background: var(--background-primary);
-        border: 1px solid var(--background-modifier-border);
-        border-radius: 4px;
-        padding: 8px 12px;
-        max-width: 400px;
-        font-size: 0.9em;
-        z-index: 1000;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-      }
-      .vale-tooltip-severity {
-        font-weight: bold;
-        margin-bottom: 4px;
-      }
-      .vale-tooltip-message {
-        margin-bottom: 4px;
-      }
-      .vale-tooltip-check {
-        font-size: 0.85em;
-        color: var(--text-muted);
-      }
-      .vale-inline-suggestion {
-        display: inline-block;
-        position: relative;
-        cursor: help;
-      }
-    `;
-    document.head.appendChild(style);
+  private updateStyleVariables() {
+    document.body.style.setProperty('--vale-alert-severity-error-background-color', this.settings.severityColors.error);
+    document.body.style.setProperty('--vale-alert-severity-warning-background-color', this.settings.severityColors.warning);
+    document.body.style.setProperty('--vale-alert-severity-suggestion-background-color', this.settings.severityColors.suggestion);
   }
 
   private async checkCurrentFile() {
@@ -241,7 +202,7 @@ export default class ValePlugin extends Plugin {
 
     try {
       const content = await this.app.vault.read(file);
-      const adapter = this.app.vault.adapter as any;
+      const adapter = this.app.vault.adapter as { basePath?: string; getBasePath?: () => string };
       const basePath = adapter.basePath || adapter.getBasePath?.() || '';
       const tempPath = path.join(basePath, '.vale-temp.md');
       
@@ -349,8 +310,8 @@ export default class ValePlugin extends Plugin {
           const issues = output[filename] || [];
           // console.log('[Vale] Found', issues.length, 'issues (from error.stdout)');
           return issues;
-        } catch (parseError) {
-          // console.error('[Vale] Failed to parse error.stdout:', parseError);
+        } catch {
+          // Failed to parse error.stdout
           throw error;
         }
       }
@@ -372,7 +333,7 @@ export default class ValePlugin extends Plugin {
 
     // Get the CodeMirror 6 EditorView from the editor
     // Access it through the cm property
-    const view = (editor as any).cm;
+    const view = (editor as { cm?: { dispatch: (arg: unknown) => void } }).cm;
 
     if (!view) {
       console.warn('Could not access CodeMirror 6 view');
@@ -409,79 +370,18 @@ export default class ValePlugin extends Plugin {
     return widget;
   }
 
-  private addHoverHandlers(editor: Editor, decorations: any[]) {
-    let tooltip: HTMLElement | null = null;
-
-    const showTooltip = (event: MouseEvent, issue: ValeIssue) => {
-      if (tooltip) {
-        tooltip.remove();
-      }
-
-      tooltip = document.createElement('div');
-      tooltip.className = 'vale-tooltip';
-      
-      const severityEl = document.createElement('div');
-      severityEl.className = 'vale-tooltip-severity';
-      severityEl.textContent = issue.Severity.toUpperCase();
-      const severityKey = issue.Severity.toLowerCase() as keyof typeof this.settings.severityColors;
-      severityEl.style.color = this.settings.severityColors[severityKey] || '#000';
-      
-      const messageEl = document.createElement('div');
-      messageEl.className = 'vale-tooltip-message';
-      messageEl.textContent = issue.Message;
-      
-      const checkEl = document.createElement('div');
-      checkEl.className = 'vale-tooltip-check';
-      checkEl.textContent = `Check: ${issue.Check}`;
-      
-      tooltip.appendChild(severityEl);
-      tooltip.appendChild(messageEl);
-      tooltip.appendChild(checkEl);
-      
-      if (issue.Link) {
-        const linkEl = document.createElement('a');
-        linkEl.href = issue.Link;
-        linkEl.textContent = 'Learn more';
-        linkEl.style.fontSize = '0.85em';
-        linkEl.onclick = (e) => {
-          e.preventDefault();
-          window.open(issue.Link, '_blank');
-        };
-        tooltip.appendChild(linkEl);
-      }
-      
-      document.body.appendChild(tooltip);
-      
-      // Position tooltip
-      tooltip.style.left = `${event.pageX + 10}px`;
-      tooltip.style.top = `${event.pageY + 10}px`;
-    };
-
-    const hideTooltip = () => {
-      if (tooltip) {
-        tooltip.remove();
-        tooltip = null;
-      }
-    };
-
-    // Add event listeners to editor container
+  private addHoverHandlers(_editor: Editor, _decorations: unknown[]) {
     // Note: Editor API doesn't expose containerEl and coordsAtPos properly
     // Disabled for now - this would need CodeMirror 6 integration
     // Users can see issues in the Vale panel instead
-
-    // const editorEl = (editor as any).containerEl;
-    // if (editorEl) {
-    //   editorEl.addEventListener('mousemove', (event: MouseEvent) => { ... });
-    //   editorEl.addEventListener('mouseleave', hideTooltip);
-    // }
   }
 
   public clearDecorations(editor: Editor) {
     // Clear decorations by dispatching an empty array
-    const view = (editor as any).cm;
+    const view = (editor as { cm?: unknown }).cm;
 
     if (view) {
-      view.dispatch({
+      (view as { dispatch: (arg: unknown) => void }).dispatch({
         effects: setValeDecorationsEffect.of([])
       });
     }
@@ -508,7 +408,9 @@ class ValeSettingTab extends PluginSettingTab {
 
     containerEl.empty();
 
-    containerEl.createEl('h2', { text: 'Vale Plugin Settings' });
+    new Setting(containerEl)
+      .setName('Vale plugin settings')
+      .setHeading();
 
     new Setting(containerEl)
       .setName('Vale executable path')
@@ -585,7 +487,9 @@ class ValeSettingTab extends PluginSettingTab {
           }
         }));
 
-    containerEl.createEl('h3', { text: 'Severity Colors' });
+    new Setting(containerEl)
+      .setName('Severity colors')
+      .setHeading();
 
     new Setting(containerEl)
       .setName('Error color')

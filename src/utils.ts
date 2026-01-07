@@ -15,7 +15,7 @@ export function ensureAbsolutePath(inputPath: string, vault: Vault): string {
     return inputPath;
   }
 
-  const adapter = vault.adapter as any;
+  const adapter = vault.adapter as { basePath?: string; getBasePath?: () => string };
   const basePath = adapter.basePath || adapter.getBasePath?.() || '';
   return path.join(basePath, inputPath);
 }
