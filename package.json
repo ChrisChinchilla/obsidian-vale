@@ -1,7 +1,7 @@
 {
-  "name": "obsidian-vale-plugin",
-  "version": "0.0.1",
-  "description": "Vale integration for Obsidian",
+  "name": "vale-linter",
+  "version": "2.0.3",
+  "description": "Vale integration plugin",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
