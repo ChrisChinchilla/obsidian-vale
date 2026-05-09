@@ -11,8 +11,11 @@ import {
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs/promises';
 import { valeDecorationsExtension, setValeDecorationsEffect } from './src/valeDecorations';
 import { findValeInCommonPaths } from './src/utils';
+import { logger } from './src/logger';
 
 const execFileAsync = promisify(execFile);
 
@@ -65,6 +68,7 @@ export default class ValePlugin extends Plugin {
   settings!: ValePluginSettings;
   public currentIssues: Map<string, ValeIssue[]> = new Map();
   private debouncedCheck!: () => void;
+  private debouncedDelay = -1;
   private statusBarItem!: HTMLElement;
 
   async onload() {
@@ -80,12 +84,7 @@ export default class ValePlugin extends Plugin {
     // Apply custom color CSS variables
     this.updateStyleVariables();
 
-    // Create debounced check function
-    this.debouncedCheck = debounce(
-      this.checkCurrentFile.bind(this),
-      this.settings.debounceDelay,
-      true
-    );
+    this.rebuildDebouncedCheck();
 
     // Add settings tab
     this.addSettingTab(new ValeSettingTab(this.app, this));
@@ -104,7 +103,9 @@ export default class ValePlugin extends Plugin {
       name: 'Toggle auto-check',
       callback: () => {
         this.settings.enableAutoCheck = !this.settings.enableAutoCheck;
-        this.saveSettings().catch(console.error);
+        this.saveSettings().catch((error) => {
+          logger.error('Failed to save settings:', error instanceof Error ? error.message : String(error));
+        });
         new Notice(`Vale auto-check ${this.settings.enableAutoCheck ? 'enabled' : 'disabled'}`);
       }
     });
@@ -114,7 +115,9 @@ export default class ValePlugin extends Plugin {
       name: 'Toggle inline decorations',
       callback: () => {
         this.settings.enableInlineDecorations = !this.settings.enableInlineDecorations;
-        this.saveSettings().catch(console.error);
+        this.saveSettings().catch((error) => {
+          logger.error('Failed to save settings:', error instanceof Error ? error.message : String(error));
+        });
 
         // Refresh decorations based on new setting
         if (this.settings.enableInlineDecorations) {
@@ -151,7 +154,7 @@ export default class ValePlugin extends Plugin {
 
     // Register events
     this.registerEvent(
-      this.app.workspace.on('editor-change', (editor: Editor) => {
+      this.app.workspace.on('editor-change', (_editor: Editor) => {
         if (this.settings.enableAutoCheck) {
           this.debouncedCheck();
         }
@@ -179,6 +182,19 @@ export default class ValePlugin extends Plugin {
   async saveSettings() {
     await this.saveData(this.settings);
     this.updateStyleVariables();
+    this.rebuildDebouncedCheck();
+  }
+
+  private rebuildDebouncedCheck() {
+    if (this.settings.debounceDelay === this.debouncedDelay) {
+      return;
+    }
+    this.debouncedDelay = this.settings.debounceDelay;
+    this.debouncedCheck = debounce(
+      () => { void this.checkCurrentFile(); },
+      this.settings.debounceDelay,
+      true
+    );
   }
 
   private updateStyleVariables() {
@@ -200,44 +216,35 @@ export default class ValePlugin extends Plugin {
 
     this.statusBarItem.setText('Checking...');
 
+    const tempPath = path.join(os.tmpdir(), `vale-${process.pid}-${Date.now()}.md`);
     try {
       const content = await this.app.vault.read(file);
-      const adapter = this.app.vault.adapter as { basePath?: string; getBasePath?: () => string };
-      const basePath = adapter.basePath || adapter.getBasePath?.() || '';
-      const tempPath = path.join(basePath, '.vale-temp.md');
-      
-      // Write content to temp file
-      await this.app.vault.adapter.write('.vale-temp.md', content);
+      await fs.writeFile(tempPath, content, 'utf8');
 
-      // Run Vale
       const issues = await this.runVale(tempPath);
-      
-      // Clean up temp file
-      try {
-        await this.app.vault.adapter.remove('.vale-temp.md');
-      } catch {
-        // Ignore cleanup errors
-      }
 
-      // Store issues
       this.currentIssues.set(file.path, issues);
-
-      // Apply decorations
       this.applyDecorations(activeView.editor, issues);
 
-      // Update status bar
-      const errorCount = issues.filter(i => i.Severity === 'error').length;
-      const warningCount = issues.filter(i => i.Severity === 'warning').length;
-      const suggestionCount = issues.filter(i => i.Severity === 'suggestion').length;
-      
+      const counts = { error: 0, warning: 0, suggestion: 0 };
+      for (const issue of issues) {
+        const key = issue.Severity as keyof typeof counts;
+        if (key in counts) counts[key]++;
+      }
       this.statusBarItem.setText(
-        `Vale: ${errorCount} errors, ${warningCount} warnings, ${suggestionCount} suggestions`
+        `Vale: ${counts.error} errors, ${counts.warning} warnings, ${counts.suggestion} suggestions`
       );
 
     } catch (error) {
-      console.error('Vale check failed:', error);
+      logger.error('Vale check failed:', error instanceof Error ? error.message : String(error));
       this.statusBarItem.setText('Error');
       new Notice(`Vale check failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      try {
+        await fs.unlink(tempPath);
+      } catch {
+        // Ignore cleanup errors (file may not exist if write failed)
+      }
     }
   }
 
@@ -337,7 +344,7 @@ export default class ValePlugin extends Plugin {
     const view = (editor as { cm?: { dispatch: (arg: unknown) => void } }).cm;
 
     if (!view) {
-      console.warn('Could not access CodeMirror 6 view');
+      logger.warn('Could not access CodeMirror 6 view');
       return;
     }
 
@@ -347,45 +354,14 @@ export default class ValePlugin extends Plugin {
     });
   }
 
-  private getOffsetForLine(editor: Editor, line: number): number {
-    const pos = { line, ch: 0 };
-    return editor.posToOffset(pos);
-  }
-
-  private getSeverityClass(severity: string): string {
-    switch (severity.toLowerCase()) {
-      case 'error':
-        return 'vale-error';
-      case 'warning':
-        return 'vale-warning';
-      case 'suggestion':
-      default:
-        return 'vale-suggestion';
-    }
-  }
-
-  private createIssueWidget(issue: ValeIssue): HTMLElement {
-    const widget = document.createElement('span');
-    widget.className = 'vale-inline-suggestion';
-    widget.setAttribute('data-vale-issue', JSON.stringify(issue));
-    return widget;
-  }
-
-  private addHoverHandlers(_editor: Editor, _decorations: unknown[]) {
-    // Note: Editor API doesn't expose containerEl and coordsAtPos properly
-    // Disabled for now - this would need CodeMirror 6 integration
-    // Users can see issues in the Vale panel instead
-  }
-
   public clearDecorations(editor: Editor) {
-    // Clear decorations by dispatching an empty array
-    const view = (editor as { cm?: unknown }).cm;
-
-    if (view) {
-      (view as { dispatch: (arg: unknown) => void }).dispatch({
-        effects: setValeDecorationsEffect.of([])
-      });
+    const view = (editor as { cm?: { dispatch: (arg: unknown) => void } }).cm;
+    if (!view) {
+      return;
     }
+    view.dispatch({
+      effects: setValeDecorationsEffect.of([])
+    });
   }
 
   private clearAllDecorations() {

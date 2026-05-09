@@ -8,10 +8,15 @@ import type { ValeIssue } from '../main';
 
 type ActionType = 'remove' | 'replace' | 'suggest' | 'edit';
 
-// Store issues for hover tooltip access
-let currentIssues: ValeIssue[] = [];
+// Decoration mark spec carrying the originating Vale issue for tooltip lookup.
+interface ValeDecorationSpec {
+  class: string;
+  attributes: Record<string, string>;
+  valeIssue: ValeIssue;
+}
 
-// Cache for dictionary suggestions to avoid redundant lookups
+// Cache configuration
+const MAX_CACHE_SIZE = 1000;
 const dictionarySuggestionsCache = new Map<string, string[]>();
 
 /**
@@ -33,12 +38,20 @@ function getSpellingSuggestions(word: string): Promise<string[]> {
 			const { webFrame } = window.require('electron');
 			if (webFrame?.getWordSuggestions) {
 				const suggestions = webFrame.getWordSuggestions(word);
+				// Implement cache size limit to prevent memory bloat
+				if (dictionarySuggestionsCache.size >= MAX_CACHE_SIZE) {
+					const firstKey = dictionarySuggestionsCache.keys().next().value;
+					if (firstKey !== undefined) {
+						dictionarySuggestionsCache.delete(firstKey);
+					}
+				}
 				dictionarySuggestionsCache.set(word, suggestions);
 				return Promise.resolve(suggestions);
 			}
 		}
-	} catch (e) {
-		console.error('Failed to get spelling suggestions:', e);
+	} catch (error) {
+		const err = error instanceof Error ? error.message : String(error);
+		console.error('Failed to get spelling suggestions:', err);
 	}
 
 	// No spell checker available or error occurred
@@ -293,21 +306,25 @@ function createActionUI(view: EditorView, issue: ValeIssue): HTMLElement | null 
     const container = document.createElement('div');
     container.appendChild(createSuggestionsHeader('Loading suggestions...'));
 
-    // Fetch spelling suggestions asynchronously
+    const replaceContents = (...nodes: Node[]) => {
+      // Bail if the tooltip was torn down before the fetch resolved.
+      if (!container.isConnected) return;
+      container.replaceChildren(...nodes);
+    };
+
     getSpellingSuggestions(issue.Match)
       .then(spellSuggestions => {
-        container.innerHTML = ''; // Clear loading message
-
         if (spellSuggestions.length > 0) {
-          container.appendChild(createSuggestionsHeader('Suggestions:'));
-          container.appendChild(createSuggestionButtons(view, issue, spellSuggestions, true));
+          replaceContents(
+            createSuggestionsHeader('Suggestions:'),
+            createSuggestionButtons(view, issue, spellSuggestions, true)
+          );
         } else {
-          container.appendChild(createSuggestionsHeader('No suggestions available'));
+          replaceContents(createSuggestionsHeader('No suggestions available'));
         }
       })
       .catch(err => {
-        container.innerHTML = '';
-        container.appendChild(createSuggestionsHeader('Error loading suggestions'));
+        replaceContents(createSuggestionsHeader('Error loading suggestions'));
         console.error('Error fetching spelling suggestions:', err);
       });
 
@@ -336,35 +353,33 @@ function createDecorations(
   issues: ValeIssue[],
   doc: { lines: number; length: number; line: (num: number) => { from: number } }
 ): DecorationSet {
-  currentIssues = issues;
-  const builder = new RangeSetBuilder<Decoration>();
-
+  // Sort by start position so RangeSetBuilder receives ranges in order.
+  const positioned: { from: number; to: number; issue: ValeIssue }[] = [];
   for (const issue of issues) {
     try {
       const position = calculateIssuePosition(issue, doc);
-      if (!position) {
-        continue;
+      if (position) {
+        positioned.push({ ...position, issue });
       }
-
-      const { from, to } = position;
-      const className = `vale-${issue.Severity.toLowerCase()}`;
-      const tooltipText = generateTooltipText(issue);
-
-      const decoration = Decoration.mark({
-        class: className,
-        attributes: {
-          'data-vale-message': issue.Message,
-          'data-vale-check': issue.Check,
-          'title': tooltipText
-        }
-      });
-
-      builder.add(from, to, decoration);
     } catch (e) {
-      console.warn('Failed to create Vale decoration for issue:', issue, e);
+      console.warn('Failed to position Vale issue:', issue, e);
     }
   }
+  positioned.sort((a, b) => a.from - b.from || a.to - b.to);
 
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const { from, to, issue } of positioned) {
+    const spec: ValeDecorationSpec = {
+      class: `vale-${issue.Severity.toLowerCase()}`,
+      attributes: {
+        'data-vale-message': issue.Message,
+        'data-vale-check': issue.Check,
+        'title': generateTooltipText(issue)
+      },
+      valeIssue: issue
+    };
+    builder.add(from, to, Decoration.mark(spec));
+  }
   return builder.finish();
 }
 
@@ -423,17 +438,15 @@ function createTooltipDOM(view: EditorView, issue: ValeIssue): HTMLElement {
 /**
  * Find the Vale issue at the given position
  */
-function findIssueAtPosition(view: EditorView, pos: number, decorations: DecorationSet): ValeIssue | undefined {
+function findIssueAtPosition(pos: number, decorations: DecorationSet): ValeIssue | undefined {
   let foundIssue: ValeIssue | undefined;
 
-  decorations.between(pos, pos, (from, to) => {
-    if (pos >= from && pos <= to && !foundIssue) {
-      for (const issue of currentIssues) {
-        const position = calculateIssuePosition(issue, view.state.doc);
-        if (position && from === position.from && to === position.to) {
-          foundIssue = issue;
-          return false; // Stop iterating
-        }
+  decorations.between(pos, pos, (from, to, deco) => {
+    if (pos >= from && pos <= to) {
+      const spec = deco.spec as Partial<ValeDecorationSpec>;
+      if (spec.valeIssue) {
+        foundIssue = spec.valeIssue;
+        return false;
       }
     }
   });
@@ -478,7 +491,7 @@ export const valeDecorationsField = StateField.define<DecorationSet>({
  */
 const valeHoverTooltip = hoverTooltip((view, pos) => {
   const decorations = view.state.field(valeDecorationsField);
-  const issue = findIssueAtPosition(view, pos, decorations);
+  const issue = findIssueAtPosition(pos, decorations);
 
   if (!issue) {
     return null;
