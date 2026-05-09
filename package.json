@@ -1,6 +1,6 @@
 {
   "name": "vale-linter",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "Vale integration plugin",
   "main": "main.js",
   "scripts": {
