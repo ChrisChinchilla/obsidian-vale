@@ -62,17 +62,17 @@ const DEFAULT_SETTINGS: ValePluginSettings = {
 };
 
 export default class ValePlugin extends Plugin {
-  settings: ValePluginSettings;
+  settings!: ValePluginSettings;
   public currentIssues: Map<string, ValeIssue[]> = new Map();
-  private debouncedCheck: () => void;
-  private statusBarItem: HTMLElement;
+  private debouncedCheck!: () => void;
+  private statusBarItem!: HTMLElement;
 
   async onload() {
     await this.loadSettings();
 
     // Add status bar item
     this.statusBarItem = this.addStatusBarItem();
-    this.statusBarItem.setText('Vale: Ready');
+    this.statusBarItem.setText('Ready');
 
     // Register CodeMirror 6 extension for Vale decorations
     this.registerEditorExtension(valeDecorationsExtension);
@@ -93,9 +93,9 @@ export default class ValePlugin extends Plugin {
     // Register commands
     this.addCommand({
       id: 'check-current-file',
-      name: 'Check current file with Vale',
-      editorCallback: (editor: Editor, view: MarkdownView) => {
-        this.checkCurrentFile();
+      name: 'Check current file',
+      editorCallback: () => {
+        void this.checkCurrentFile();
       }
     });
 
@@ -141,7 +141,7 @@ export default class ValePlugin extends Plugin {
 
     this.addCommand({
       id: 'clear-issues',
-      name: 'Clear Vale issues',
+      name: 'Clear all issues',
       callback: () => {
         this.clearAllDecorations();
         this.currentIssues.clear();
@@ -161,7 +161,7 @@ export default class ValePlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', () => {
         if (this.settings.enableAutoCheck) {
-          this.checkCurrentFile();
+          void this.checkCurrentFile();
         }
       })
     );
@@ -198,7 +198,7 @@ export default class ValePlugin extends Plugin {
       return;
     }
 
-    this.statusBarItem.setText('Vale: Checking...');
+    this.statusBarItem.setText('Checking...');
 
     try {
       const content = await this.app.vault.read(file);
@@ -215,7 +215,7 @@ export default class ValePlugin extends Plugin {
       // Clean up temp file
       try {
         await this.app.vault.adapter.remove('.vale-temp.md');
-      } catch (e) {
+      } catch {
         // Ignore cleanup errors
       }
 
@@ -236,8 +236,8 @@ export default class ValePlugin extends Plugin {
 
     } catch (error) {
       console.error('Vale check failed:', error);
-      this.statusBarItem.setText('Vale: Error');
-      new Notice(`Vale check failed: ${error.message}`);
+      this.statusBarItem.setText('Error');
+      new Notice(`Vale check failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -303,9 +303,10 @@ export default class ValePlugin extends Plugin {
     } catch (error) {
       // console.error('[Vale] Command failed:', error);
       // Vale returns exit code 1 when there are issues, which is not an error
-      if (error.stdout) {
+      const execError = error as { stdout?: string };
+      if (execError.stdout) {
         try {
-          const output: ValeOutput = JSON.parse(error.stdout);
+          const output: ValeOutput = JSON.parse(execError.stdout);
           const filename = Object.keys(output)[0];
           const issues = output[filename] || [];
           // console.log('[Vale] Found', issues.length, 'issues (from error.stdout)');
@@ -409,14 +410,10 @@ class ValeSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl)
-      .setName('Vale plugin settings')
-      .setHeading();
-
-    new Setting(containerEl)
-      .setName('Vale executable path')
-      .setDesc('Path to the Vale executable (default: "vale")')
+      .setName('Executable path')
+      .setDesc('Path to the executable (defaults to "vale" on the system path)')
       .addText(text => text
-        .setPlaceholder('vale')
+        .setPlaceholder('/usr/local/bin/vale')
         .setValue(this.plugin.settings.valePath)
         .onChange(async (value) => {
           this.plugin.settings.valePath = value || 'vale';
@@ -424,7 +421,7 @@ class ValeSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Vale config file path')
+      .setName('Config file path')
       .setDesc('Path to .vale.ini config file (leave empty to use default)')
       .addText(text => text
         .setPlaceholder('/path/to/.vale.ini')
@@ -446,7 +443,7 @@ class ValeSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Show inline decorations')
-      .setDesc('Display wavy underlines for Vale issues in the editor')
+      .setDesc('Display wavy underlines for issues in the editor')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.enableInlineDecorations)
         .onChange(async (value) => {

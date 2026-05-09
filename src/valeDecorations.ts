@@ -18,11 +18,11 @@ const dictionarySuggestionsCache = new Map<string, string[]>();
  * Get spelling suggestions from the system dictionary
  * Uses Electron's spell checker via the webFrame API
  */
-async function getSpellingSuggestions(word: string): Promise<string[]> {
+function getSpellingSuggestions(word: string): Promise<string[]> {
 	// Check cache first
 	const cached = dictionarySuggestionsCache.get(word);
 	if (cached !== undefined) {
-		return cached;
+		return Promise.resolve(cached);
 	}
 
 	try {
@@ -34,7 +34,7 @@ async function getSpellingSuggestions(word: string): Promise<string[]> {
 			if (webFrame?.getWordSuggestions) {
 				const suggestions = webFrame.getWordSuggestions(word);
 				dictionarySuggestionsCache.set(word, suggestions);
-				return suggestions;
+				return Promise.resolve(suggestions);
 			}
 		}
 	} catch (e) {
@@ -43,7 +43,7 @@ async function getSpellingSuggestions(word: string): Promise<string[]> {
 
 	// No spell checker available or error occurred
 	dictionarySuggestionsCache.set(word, []);
-	return [];
+	return Promise.resolve([]);
 }
 
 // ============================================================================
