@@ -4,9 +4,8 @@
 
 export enum LogLevel {
   DEBUG = 0,
-  INFO = 1,
-  WARN = 2,
-  ERROR = 3
+  WARN = 1,
+  ERROR = 2
 }
 
 class Logger {
@@ -20,12 +19,6 @@ class Logger {
   debug(...args: unknown[]): void {
     if (this.level <= LogLevel.DEBUG) {
       console.debug(this.prefix, ...args);
-    }
-  }
-
-  info(...args: unknown[]): void {
-    if (this.level <= LogLevel.INFO) {
-      console.info(this.prefix, ...args);
     }
   }
 
