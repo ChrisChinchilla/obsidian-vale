@@ -3,6 +3,7 @@
     "inlineSourceMap": true,
     "inlineSources": true,
     "module": "ESNext",
+    "moduleResolution": "bundler",
     "target": "ES2020",
     "allowJs": true,
     "noImplicitAny": true,

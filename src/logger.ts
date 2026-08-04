@@ -9,7 +9,7 @@ export enum LogLevel {
 }
 
 class Logger {
-  private level: LogLevel = LogLevel.INFO;
+  private level: LogLevel = LogLevel.WARN;
   private prefix = '[Vale Plugin]';
 
   setLevel(level: LogLevel): void {
