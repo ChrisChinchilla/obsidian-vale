@@ -19,6 +19,20 @@ interface ValeDecorationSpec {
 const MAX_CACHE_SIZE = 1000;
 const dictionarySuggestionsCache = new Map<string, string[]>();
 
+// ============================================================================
+// Vocab Handler
+// ============================================================================
+
+// The plugin registers a handler here so tooltip buttons can add words to
+// Vale's accept/reject vocab lists without this module depending on main.ts
+// at runtime (only the ValeIssue type is imported from there).
+export type VocabAction = (word: string, list: 'accept' | 'reject') => void;
+let vocabHandler: VocabAction | null = null;
+
+export function setVocabHandler(handler: VocabAction | null): void {
+  vocabHandler = handler;
+}
+
 /**
  * Get spelling suggestions from the system dictionary
  * Uses Electron's spell checker via the webFrame API
@@ -240,6 +254,41 @@ function createSuggestionsHeader(text: string): HTMLElement {
 }
 
 /**
+ * Create "Add to dictionary" / "Ignore" buttons that add a word to Vale's
+ * accept/reject vocab lists, for spelling issues only.
+ */
+function createVocabButtons(word: string): HTMLElement | null {
+  if (!vocabHandler || !word) {
+    return null;
+  }
+
+  const container = document.createElement('div');
+  container.className = 'vale-tooltip-actions';
+
+  const acceptButton = document.createElement('button');
+  acceptButton.className = 'vale-tooltip-action-button';
+  acceptButton.textContent = 'Add to dictionary';
+  acceptButton.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    vocabHandler?.(word, 'accept');
+  };
+  container.appendChild(acceptButton);
+
+  const rejectButton = document.createElement('button');
+  rejectButton.className = 'vale-tooltip-action-button';
+  rejectButton.textContent = 'Flag as incorrect';
+  rejectButton.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    vocabHandler?.(word, 'reject');
+  };
+  container.appendChild(rejectButton);
+
+  return container;
+}
+
+/**
  * Create suggestion buttons
  * @param directApply - If true, directly replace text without using Vale action (for spell check)
  */
@@ -314,14 +363,17 @@ function createActionUI(view: EditorView, issue: ValeIssue): HTMLElement | null 
 
     getSpellingSuggestions(issue.Match)
       .then(spellSuggestions => {
+        const nodes: HTMLElement[] = [];
         if (spellSuggestions.length > 0) {
-          replaceContents(
-            createSuggestionsHeader('Suggestions:'),
-            createSuggestionButtons(view, issue, spellSuggestions, true)
-          );
+          nodes.push(createSuggestionsHeader('Suggestions:'), createSuggestionButtons(view, issue, spellSuggestions, true));
         } else {
-          replaceContents(createSuggestionsHeader('No suggestions available'));
+          nodes.push(createSuggestionsHeader('No suggestions available'));
         }
+        const vocabButtons = createVocabButtons(issue.Match);
+        if (vocabButtons) {
+          nodes.push(vocabButtons);
+        }
+        replaceContents(...nodes);
       })
       .catch(err => {
         replaceContents(createSuggestionsHeader('Error loading suggestions'));

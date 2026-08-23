@@ -42,9 +42,9 @@ Compared against two more mature Vale integrations to find gaps worth closing:
 - [x] Wire up `ensureAbsolutePath()` in `src/utils.ts` so a relative `configPath` setting actually resolves against the vault base path, instead of being used as-is.
 
 **Medium:**
-- [ ] Vocab management — "Add to accept list" / "Add to reject list" commands/hover actions that write to Vale's vocab files (mirrors vale-vscode).
-- [ ] Alert filter setting — suppress specific checks by name/glob, independent of severity.
-- [ ] A dedicated issues panel/view (an Obsidian `ItemView`) listing all issues in the current file/vault, not just inline decorations (mirrors `ValeView.tsx` in the original plugin).
+- [x] Vocab management — "Add to accept list" / "Add to reject list" commands/hover actions that write to Vale's vocab files (mirrors vale-vscode). Implemented via `vale ls-config` (parsed for `StylesPath`/`Vocab`) plus hover buttons on spelling issues; requires `Vocab = <name>` set in `.vale.ini`.
+- [x] Alert filter setting — suppress specific checks by name/glob, independent of severity. Implemented as a comma-separated `ignoredChecks` setting with `*` wildcard support.
+- [x] A dedicated issues panel/view (an Obsidian `ItemView`) listing all issues in the current file, not just inline decorations (mirrors `ValeView.tsx` in the original plugin). Reuses the legacy `.obsidian-vale .alert` CSS classes already present in `styles.css`. Vault-wide (not just current file) issue listing is not implemented — scoped to the active file only.
 
 **Larger/architectural:**
 - [ ] In-app style package browser/installer (mirrors `StyleSettings.tsx` in the original plugin) — replaces the current "run `vale sync` yourself" workflow.

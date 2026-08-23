@@ -14,8 +14,9 @@ import { promisify } from 'util';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
-import { valeDecorationsExtension, setValeDecorationsEffect } from './src/valeDecorations';
-import { ensureAbsolutePath, findValeInCommonPaths } from './src/utils';
+import { valeDecorationsExtension, setValeDecorationsEffect, setVocabHandler } from './src/valeDecorations';
+import { ensureAbsolutePath, findValeInCommonPaths, getVaultBasePath } from './src/utils';
+import { ValeIssuesView, VALE_ISSUES_VIEW_TYPE } from './src/valeIssuesView';
 import { logger } from './src/logger';
 
 const execFileAsync = promisify(execFile);
@@ -55,6 +56,7 @@ interface ValePluginSettings {
   enableInlineDecorations: boolean;
   minAlertLevel: ValeSeverity;
   maxNumberOfProblems: number;
+  ignoredChecks: string;
   severityColors: {
     error: string;
     warning: string;
@@ -70,6 +72,7 @@ const DEFAULT_SETTINGS: ValePluginSettings = {
   enableInlineDecorations: true,
   minAlertLevel: 'suggestion',
   maxNumberOfProblems: 100,
+  ignoredChecks: '',
   severityColors: {
     error: '#ff0000',
     warning: '#ffa500',
@@ -93,6 +96,14 @@ export default class ValePlugin extends Plugin {
 
     // Register CodeMirror 6 extension for Vale decorations
     this.registerEditorExtension(valeDecorationsExtension);
+
+    // Let hover-tooltip buttons add words to Vale's accept/reject vocab lists
+    setVocabHandler((word, list) => {
+      void this.addToVocabList(word, list);
+    });
+
+    // Register the issues panel view
+    this.registerView(VALE_ISSUES_VIEW_TYPE, (leaf) => new ValeIssuesView(leaf, this));
 
     // Apply custom color CSS variables
     this.updateStyleVariables();
@@ -161,6 +172,7 @@ export default class ValePlugin extends Plugin {
       callback: () => {
         this.clearAllDecorations();
         this.currentIssues.clear();
+        this.refreshIssuesViews([]);
         new Notice('Vale issues cleared');
       }
     });
@@ -178,6 +190,40 @@ export default class ValePlugin extends Plugin {
       name: 'Show effective configuration',
       callback: () => {
         void this.showConfiguration();
+      }
+    });
+
+    this.addCommand({
+      id: 'open-issues-view',
+      name: 'Open issues panel',
+      callback: () => {
+        void this.activateIssuesView();
+      }
+    });
+
+    this.addCommand({
+      id: 'vocab-add-accept',
+      name: 'Add selection to Vale accept list',
+      editorCallback: (editor: Editor) => {
+        const word = editor.getSelection().trim();
+        if (!word) {
+          new Notice('Select a word or phrase first');
+          return;
+        }
+        void this.addToVocabList(word, 'accept');
+      }
+    });
+
+    this.addCommand({
+      id: 'vocab-add-reject',
+      name: 'Add selection to Vale reject list',
+      editorCallback: (editor: Editor) => {
+        const word = editor.getSelection().trim();
+        if (!word) {
+          new Notice('Select a word or phrase first');
+          return;
+        }
+        void this.addToVocabList(word, 'reject');
       }
     });
 
@@ -202,6 +248,7 @@ export default class ValePlugin extends Plugin {
 
   onunload() {
     this.clearAllDecorations();
+    setVocabHandler(null);
   }
 
   async loadSettings() {
@@ -254,6 +301,7 @@ export default class ValePlugin extends Plugin {
 
       this.currentIssues.set(file.path, issues);
       this.applyDecorations(activeView.editor, issues);
+      this.refreshIssuesViews(issues);
 
       const counts = { error: 0, warning: 0, suggestion: 0 };
       for (const issue of issues) {
@@ -295,14 +343,132 @@ export default class ValePlugin extends Plugin {
     return ensureAbsolutePath(this.settings.configPath, this.app.vault);
   }
 
+  /** cwd for Vale invocations, so a relative StylesPath in .vale.ini resolves against the vault root. */
+  private execOptions(): { cwd?: string } {
+    const basePath = getVaultBasePath(this.app.vault);
+    return basePath ? { cwd: basePath } : {};
+  }
+
+  private matchesIgnoredCheck(checkName: string): boolean {
+    const patterns = this.settings.ignoredChecks
+      .split(',')
+      .map((pattern) => pattern.trim())
+      .filter(Boolean);
+
+    return patterns.some((pattern) => {
+      if (!pattern.includes('*')) {
+        return checkName === pattern;
+      }
+      const escaped = pattern.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const regex = new RegExp(`^${escaped.join('.*')}$`);
+      return regex.test(checkName);
+    });
+  }
+
   private filterIssues(issues: ValeIssue[]): ValeIssue[] {
     const minRank = SEVERITY_RANK[this.settings.minAlertLevel] ?? SEVERITY_RANK.suggestion;
-    const filtered = issues.filter((issue) => (SEVERITY_RANK[issue.Severity] ?? SEVERITY_RANK.suggestion) >= minRank);
+    const filtered = issues.filter((issue) => {
+      if ((SEVERITY_RANK[issue.Severity] ?? SEVERITY_RANK.suggestion) < minRank) {
+        return false;
+      }
+      return !this.matchesIgnoredCheck(issue.Check);
+    });
 
     if (this.settings.maxNumberOfProblems > 0) {
       return filtered.slice(0, this.settings.maxNumberOfProblems);
     }
     return filtered;
+  }
+
+  private refreshIssuesViews(issues: ValeIssue[]): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(VALE_ISSUES_VIEW_TYPE)) {
+      if (leaf.view instanceof ValeIssuesView) {
+        leaf.view.render(issues);
+      }
+    }
+  }
+
+  private async activateIssuesView(): Promise<void> {
+    const { workspace } = this.app;
+    let leaf = workspace.getLeavesOfType(VALE_ISSUES_VIEW_TYPE)[0];
+    if (!leaf) {
+      const rightLeaf = workspace.getRightLeaf(false);
+      if (!rightLeaf) {
+        return;
+      }
+      leaf = rightLeaf;
+      await leaf.setViewState({ type: VALE_ISSUES_VIEW_TYPE, active: true });
+    }
+    workspace.revealLeaf(leaf);
+  }
+
+  private async getStylesInfo(): Promise<{ stylesPath: string; vocab: string } | null> {
+    const valePath = await this.resolveValePath();
+    const configPath = this.resolveConfigPath();
+
+    const args = ['ls-config'];
+    if (configPath) {
+      args.push(`--config=${configPath}`);
+    }
+
+    try {
+      const { stdout } = await execFileAsync(valePath, args, this.execOptions());
+      const config = JSON.parse(stdout) as { StylesPath?: string; Vocab?: string };
+
+      if (!config.StylesPath) {
+        new Notice('Vale configuration has no StylesPath set');
+        return null;
+      }
+      if (!config.Vocab) {
+        new Notice('No Vocab configured — add "Vocab = YourVocabName" to your .vale.ini');
+        return null;
+      }
+
+      return {
+        stylesPath: ensureAbsolutePath(config.StylesPath, this.app.vault),
+        vocab: config.Vocab
+      };
+    } catch (error) {
+      logger.error('Failed to read Vale configuration:', error instanceof Error ? error.message : String(error));
+      new Notice(`Failed to read Vale configuration: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+  }
+
+  private async addToVocabList(word: string, list: 'accept' | 'reject'): Promise<void> {
+    const info = await this.getStylesInfo();
+    if (!info) {
+      return;
+    }
+
+    const vocabDir = path.join(info.stylesPath, 'config', 'vocabularies', info.vocab);
+    const filePath = path.join(vocabDir, `${list}.txt`);
+
+    try {
+      await fs.mkdir(vocabDir, { recursive: true });
+
+      let existing = '';
+      try {
+        existing = await fs.readFile(filePath, 'utf8');
+      } catch {
+        // File doesn't exist yet - start with an empty list
+      }
+
+      const lines = existing.split('\n').map((line) => line.trim()).filter(Boolean);
+      if (lines.includes(word)) {
+        new Notice(`"${word}" is already in the ${list} list`);
+        return;
+      }
+
+      lines.push(word);
+      await fs.writeFile(filePath, lines.join('\n') + '\n', 'utf8');
+      new Notice(`Added "${word}" to Vale ${list} list`);
+
+      void this.checkCurrentFile();
+    } catch (error) {
+      logger.error('Failed to update Vale vocab:', error instanceof Error ? error.message : String(error));
+      new Notice(`Failed to update Vale vocab: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private async syncStyles() {
@@ -316,7 +482,7 @@ export default class ValePlugin extends Plugin {
 
     new Notice('Syncing Vale styles…');
     try {
-      await execFileAsync(valePath, args);
+      await execFileAsync(valePath, args, this.execOptions());
       new Notice('Vale styles synced');
     } catch (error) {
       logger.error('Vale sync failed:', error instanceof Error ? error.message : String(error));
@@ -334,7 +500,7 @@ export default class ValePlugin extends Plugin {
     }
 
     try {
-      const { stdout } = await execFileAsync(valePath, args);
+      const { stdout } = await execFileAsync(valePath, args, this.execOptions());
       new ValeConfigModal(this.app, stdout).open();
     } catch (error) {
       logger.error('Failed to load Vale configuration:', error instanceof Error ? error.message : String(error));
@@ -354,7 +520,7 @@ export default class ValePlugin extends Plugin {
     args.push(filepath);
 
     try {
-      const { stdout, stderr } = await execFileAsync(valePath, args);
+      const { stdout, stderr } = await execFileAsync(valePath, args, this.execOptions());
 
       if (stderr && !stderr.includes('warning')) {
         // console.error('[Vale] stderr:', stderr);
@@ -566,6 +732,17 @@ class ValeSettingTab extends PluginSettingTab {
             this.plugin.settings.maxNumberOfProblems = numValue;
             await this.plugin.saveSettings();
           }
+        }));
+
+    new Setting(containerEl)
+      .setName('Ignored checks')
+      .setDesc('Comma-separated Vale check names to suppress entirely, independent of severity. Supports * wildcards (e.g. "write-good.*, Vale.Spelling")')
+      .addText(text => text
+        .setPlaceholder('write-good.*, Vale.Spelling')
+        .setValue(this.plugin.settings.ignoredChecks)
+        .onChange(async (value) => {
+          this.plugin.settings.ignoredChecks = value;
+          await this.plugin.saveSettings();
         }));
 
     new Setting(containerEl)
