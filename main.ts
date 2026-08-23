@@ -2,6 +2,7 @@ import {
   App,
   Editor,
   MarkdownView,
+  Modal,
   Plugin,
   PluginSettingTab,
   Setting,
@@ -14,7 +15,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
 import { valeDecorationsExtension, setValeDecorationsEffect } from './src/valeDecorations';
-import { findValeInCommonPaths } from './src/utils';
+import { ensureAbsolutePath, findValeInCommonPaths } from './src/utils';
 import { logger } from './src/logger';
 
 const execFileAsync = promisify(execFile);
@@ -38,12 +39,22 @@ interface ValeOutput {
   [filename: string]: ValeIssue[];
 }
 
+type ValeSeverity = 'suggestion' | 'warning' | 'error';
+
+const SEVERITY_RANK: Record<string, number> = {
+  suggestion: 1,
+  warning: 2,
+  error: 3
+};
+
 interface ValePluginSettings {
   valePath: string;
   configPath: string;
   debounceDelay: number;
   enableAutoCheck: boolean;
   enableInlineDecorations: boolean;
+  minAlertLevel: ValeSeverity;
+  maxNumberOfProblems: number;
   severityColors: {
     error: string;
     warning: string;
@@ -57,6 +68,8 @@ const DEFAULT_SETTINGS: ValePluginSettings = {
   debounceDelay: 1000,
   enableAutoCheck: true,
   enableInlineDecorations: true,
+  minAlertLevel: 'suggestion',
+  maxNumberOfProblems: 100,
   severityColors: {
     error: '#ff0000',
     warning: '#ffa500',
@@ -152,6 +165,22 @@ export default class ValePlugin extends Plugin {
       }
     });
 
+    this.addCommand({
+      id: 'sync-styles',
+      name: 'Sync styles',
+      callback: () => {
+        void this.syncStyles();
+      }
+    });
+
+    this.addCommand({
+      id: 'show-configuration',
+      name: 'Show effective configuration',
+      callback: () => {
+        void this.showConfiguration();
+      }
+    });
+
     // Register events
     this.registerEvent(
       this.app.workspace.on('editor-change', (_editor: Editor) => {
@@ -221,7 +250,7 @@ export default class ValePlugin extends Plugin {
       const content = await this.app.vault.read(file);
       await fs.writeFile(tempPath, content, 'utf8');
 
-      const issues = await this.runVale(tempPath);
+      const issues = this.filterIssues(await this.runVale(tempPath));
 
       this.currentIssues.set(file.path, issues);
       this.applyDecorations(activeView.editor, issues);
@@ -248,29 +277,74 @@ export default class ValePlugin extends Plugin {
     }
   }
 
-  private async runVale(filepath: string): Promise<ValeIssue[]> {
-    // console.log('[Vale] Running vale on file:', filepath);
-
-    // Determine Vale path: use setting if provided, otherwise search common paths
-    let valePath = this.settings.valePath;
+  private async resolveValePath(): Promise<string> {
+    const valePath = this.settings.valePath;
 
     if (!valePath || valePath === 'vale') {
-      // console.log('[Vale] No explicit vale path set, searching common locations...');
       const foundPath = await findValeInCommonPaths();
-      if (foundPath) {
-        valePath = foundPath;
-        // console.log('[Vale] Using found vale binary:', valePath);
-      } else {
-        // console.log('[Vale] Vale not found in common paths, using "vale" from PATH');
-        valePath = 'vale';
-      }
-    } else {
-      // console.log('[Vale] Using explicit vale path from settings:', valePath);
+      return foundPath || 'vale';
     }
 
-    // Get config path (optional)
-    const configPath = this.settings.configPath;
-    // console.log('[Vale] Config path:', configPath || '(using Vale\'s built-in discovery)');
+    return valePath;
+  }
+
+  private resolveConfigPath(): string {
+    if (!this.settings.configPath) {
+      return '';
+    }
+    return ensureAbsolutePath(this.settings.configPath, this.app.vault);
+  }
+
+  private filterIssues(issues: ValeIssue[]): ValeIssue[] {
+    const minRank = SEVERITY_RANK[this.settings.minAlertLevel] ?? SEVERITY_RANK.suggestion;
+    const filtered = issues.filter((issue) => (SEVERITY_RANK[issue.Severity] ?? SEVERITY_RANK.suggestion) >= minRank);
+
+    if (this.settings.maxNumberOfProblems > 0) {
+      return filtered.slice(0, this.settings.maxNumberOfProblems);
+    }
+    return filtered;
+  }
+
+  private async syncStyles() {
+    const valePath = await this.resolveValePath();
+    const configPath = this.resolveConfigPath();
+
+    const args = ['sync'];
+    if (configPath) {
+      args.push(`--config=${configPath}`);
+    }
+
+    new Notice('Syncing Vale styles…');
+    try {
+      await execFileAsync(valePath, args);
+      new Notice('Vale styles synced');
+    } catch (error) {
+      logger.error('Vale sync failed:', error instanceof Error ? error.message : String(error));
+      new Notice(`Vale sync failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async showConfiguration() {
+    const valePath = await this.resolveValePath();
+    const configPath = this.resolveConfigPath();
+
+    const args = ['ls-config'];
+    if (configPath) {
+      args.push(`--config=${configPath}`);
+    }
+
+    try {
+      const { stdout } = await execFileAsync(valePath, args);
+      new ValeConfigModal(this.app, stdout).open();
+    } catch (error) {
+      logger.error('Failed to load Vale configuration:', error instanceof Error ? error.message : String(error));
+      new Notice(`Failed to load Vale configuration: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async runVale(filepath: string): Promise<ValeIssue[]> {
+    const valePath = await this.resolveValePath();
+    const configPath = this.resolveConfigPath();
 
     // Build arguments array for execFile (safer than shell string interpolation)
     const args = ['--output=JSON'];
@@ -278,19 +352,6 @@ export default class ValePlugin extends Plugin {
       args.push(`--config=${configPath}`);
     }
     args.push(filepath);
-    // console.log('[Vale] Running vale with args:', args);
-
-    // Run a separate command to detect which config file Vale is using
-    // const configArgs = ['ls-config'];
-    // if (configPath) {
-    //   configArgs.push(`--config=${configPath}`);
-    // }
-    // try {
-    //   const { stdout: configStdout } = await execFileAsync(valePath, configArgs);
-    //   console.log('[Vale] Config file being used:', configStdout.trim());
-    // } catch (e) {
-    //   console.log('[Vale] Could not detect config file (vale ls-config failed)');
-    // }
 
     try {
       const { stdout, stderr } = await execFileAsync(valePath, args);
@@ -369,6 +430,26 @@ export default class ValePlugin extends Plugin {
     if (activeView) {
       this.clearDecorations(activeView.editor);
     }
+  }
+}
+
+class ValeConfigModal extends Modal {
+  constructor(app: App, private configText: string) {
+    super(app);
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl('h2', { text: 'Vale effective configuration' });
+    const pre = contentEl.createEl('pre');
+    pre.setText(this.configText || '(empty)');
+    pre.style.whiteSpace = 'pre-wrap';
+    pre.style.maxHeight = '60vh';
+    pre.style.overflow = 'auto';
+  }
+
+  onClose() {
+    this.contentEl.empty();
   }
 }
 
@@ -456,6 +537,33 @@ class ValeSettingTab extends PluginSettingTab {
           const numValue = parseInt(value);
           if (!isNaN(numValue) && numValue > 0) {
             this.plugin.settings.debounceDelay = numValue;
+            await this.plugin.saveSettings();
+          }
+        }));
+
+    new Setting(containerEl)
+      .setName('Minimum alert level')
+      .setDesc('Only show issues at or above this severity')
+      .addDropdown(dropdown => dropdown
+        .addOption('suggestion', 'Suggestion')
+        .addOption('warning', 'Warning')
+        .addOption('error', 'Error')
+        .setValue(this.plugin.settings.minAlertLevel)
+        .onChange(async (value) => {
+          this.plugin.settings.minAlertLevel = value as ValeSeverity;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Maximum problems')
+      .setDesc('Maximum number of issues to display per file (0 = unlimited)')
+      .addText(text => text
+        .setPlaceholder('100')
+        .setValue(String(this.plugin.settings.maxNumberOfProblems))
+        .onChange(async (value) => {
+          const numValue = parseInt(value);
+          if (!isNaN(numValue) && numValue >= 0) {
+            this.plugin.settings.maxNumberOfProblems = numValue;
             await this.plugin.saveSettings();
           }
         }));

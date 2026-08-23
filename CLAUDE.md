@@ -35,11 +35,11 @@ Compared against two more mature Vale integrations to find gaps worth closing:
 [`ChrisChinchilla/vale-vscode`](https://github.com/ChrisChinchilla/vale-vscode) (a fork of the deprecated `errata-ai/vale-vscode`, the most feature-complete Vale editor integration available). Items below are grouped by rough size; check them off as they land. Note: `ensureAbsolutePath()` in `src/utils.ts` (see Architecture above) is dead code today — fixing it is bundled into the roadmap since several items below depend on config paths actually resolving correctly.
 
 **High value, low effort:**
-- [ ] `minAlertLevel`-style setting: minimum severity to surface at all (distinct from just recoloring low-severity issues).
-- [ ] `maxNumberOfProblems` cap, to avoid flooding the editor/status bar on huge documents.
-- [ ] "Sync styles" command — just shells out to `vale sync` via `execFile`, no UI required.
-- [ ] "Show effective configuration" command — surface Vale's resolved config for debugging (mirrors `vale.showConfig` in vale-vscode).
-- [ ] Wire up `ensureAbsolutePath()` in `src/utils.ts` so a relative `configPath` setting actually resolves against the vault base path, instead of being used as-is.
+- [x] `minAlertLevel`-style setting: minimum severity to surface at all (distinct from just recoloring low-severity issues).
+- [x] `maxNumberOfProblems` cap, to avoid flooding the editor/status bar on huge documents.
+- [x] "Sync styles" command — just shells out to `vale sync` via `execFile`, no UI required.
+- [x] "Show effective configuration" command — surface Vale's resolved config for debugging (mirrors `vale.showConfig` in vale-vscode).
+- [x] Wire up `ensureAbsolutePath()` in `src/utils.ts` so a relative `configPath` setting actually resolves against the vault base path, instead of being used as-is.
 
 **Medium:**
 - [ ] Vocab management — "Add to accept list" / "Add to reject list" commands/hover actions that write to Vale's vocab files (mirrors vale-vscode).
