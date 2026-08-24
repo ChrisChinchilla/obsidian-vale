@@ -14,6 +14,10 @@ function parseList(value: string): string[] {
   return value.split(',').map((v) => v.trim()).filter(Boolean);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function findSectionBounds(lines: string[], section: string): { start: number; end: number } | null {
   const header = `[${section}]`;
   const start = lines.findIndex((line) => line.trim() === header);
@@ -128,4 +132,100 @@ export function addToSectionList(text: string, section: string, key: string, nam
 
 export function removeFromSectionList(text: string, section: string, key: string, name: string): string {
   return setSectionListKey(text, section, key, (values) => removeValue(values, name));
+}
+
+// ---------------------------------------------------------------------------
+// Single-value keys (for per-rule severity overrides, e.g.
+// `write-good.Passive = warning` under `[*.md]`)
+// ---------------------------------------------------------------------------
+
+export function readSectionKeyValue(text: string, section: string, key: string): string | undefined {
+  const lines = text.split('\n');
+  const bounds = findSectionBounds(lines, section);
+  if (!bounds) {
+    return undefined;
+  }
+
+  const keyRegex = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*(.*)$`);
+  for (let i = bounds.start + 1; i < bounds.end; i++) {
+    const match = lines[i].match(keyRegex);
+    if (match) {
+      return match[1].trim();
+    }
+  }
+  return undefined;
+}
+
+export function setSectionKeyValue(text: string, section: string, key: string, value: string): string {
+  const lines = text.split('\n');
+  const keyRegex = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*(.*)$`);
+  const bounds = findSectionBounds(lines, section);
+
+  if (!bounds) {
+    if (lines.length > 0 && lines[lines.length - 1].trim() !== '') {
+      lines.push('');
+    }
+    lines.push(`[${section}]`, `${key} = ${value}`);
+    return lines.join('\n');
+  }
+
+  for (let i = bounds.start + 1; i < bounds.end; i++) {
+    if (keyRegex.test(lines[i])) {
+      lines[i] = `${key} = ${value}`;
+      return lines.join('\n');
+    }
+  }
+
+  lines.splice(bounds.end, 0, `${key} = ${value}`);
+  return lines.join('\n');
+}
+
+export function removeSectionKey(text: string, section: string, key: string): string {
+  const lines = text.split('\n');
+  const bounds = findSectionBounds(lines, section);
+  if (!bounds) {
+    return text;
+  }
+
+  const keyRegex = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*(.*)$`);
+  for (let i = bounds.start + 1; i < bounds.end; i++) {
+    if (keyRegex.test(lines[i])) {
+      lines.splice(i, 1);
+      return lines.join('\n');
+    }
+  }
+  return text;
+}
+
+// ---------------------------------------------------------------------------
+// Rule override semantics: `RuleName = NO` disables a rule, `RuleName =
+// suggestion|warning|error` overrides its severity, and no key at all means
+// "use the style's default".
+// ---------------------------------------------------------------------------
+
+export type RuleOverride = 'default' | 'suggestion' | 'warning' | 'error' | 'disabled';
+
+export function parseRuleOverride(value: string | undefined): RuleOverride {
+  if (value === undefined) {
+    return 'default';
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'no') {
+    return 'disabled';
+  }
+  if (normalized === 'suggestion' || normalized === 'warning' || normalized === 'error') {
+    return normalized;
+  }
+  return 'default';
+}
+
+/** Returns the ini value to write, or null to mean "remove the key". */
+export function ruleOverrideToValue(override: RuleOverride): string | null {
+  if (override === 'default') {
+    return null;
+  }
+  if (override === 'disabled') {
+    return 'NO';
+  }
+  return override;
 }

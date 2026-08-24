@@ -430,3 +430,9 @@
   max-height: 60vh;
   overflow-y: auto;
 }
+
+/* Rule settings modal */
+.vale-rule-settings-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}

@@ -1,5 +1,6 @@
 import { App, Modal, Notice, Setting, requestUrl } from 'obsidian';
 import type ValePlugin from '../main';
+import { ValeRuleSettingsModal } from './valeRuleSettingsModal';
 
 const REGISTRY_URL = 'https://raw.githubusercontent.com/errata-ai/packages/master/library.json';
 
@@ -110,6 +111,13 @@ export class ValeStyleBrowserModal extends Modal {
       .setIcon('external-link')
       .setTooltip('Open homepage')
       .onClick(() => window.open(pkg.homepage, '_blank')));
+
+    if (isEnabled) {
+      setting.addExtraButton((button) => button
+        .setIcon('settings')
+        .setTooltip('Configure rules')
+        .onClick(() => new ValeRuleSettingsModal(this.app, this.plugin, pkg.name).open()));
+    }
 
     setting.addButton((button) => {
       button

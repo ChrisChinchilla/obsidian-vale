@@ -22,9 +22,15 @@ import { ValeStyleBrowserModal } from './src/valeStyleBrowserModal';
 import {
   addToSectionList,
   addToTopLevelList,
+  parseRuleOverride,
+  readSectionKeyValue,
   readSectionListKey,
   removeFromSectionList,
-  removeFromTopLevelList
+  removeFromTopLevelList,
+  removeSectionKey,
+  ruleOverrideToValue,
+  setSectionKeyValue,
+  type RuleOverride
 } from './src/valeConfigEdit';
 import { logger } from './src/logger';
 
@@ -691,13 +697,62 @@ export default class ValePlugin extends Plugin {
     text = removeFromSectionList(text, '*.md', 'BasedOnStyles', name);
     await fs.writeFile(configPath, text, 'utf8');
 
-    const config = await this.lsConfig() as { Paths?: string[] } | null;
-    const stylesPath = config?.Paths?.[config.Paths.length - 1];
+    const stylesPath = await this.getStylesPath();
     if (stylesPath) {
-      await fs.rm(path.join(ensureAbsolutePath(stylesPath, this.app.vault), name), { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });
+      await fs.rm(path.join(stylesPath, name), { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });
     }
 
     new Notice(`Removed ${name} from Vale styles`);
+    void this.checkCurrentFile();
+  }
+
+  private async getStylesPath(): Promise<string | null> {
+    const config = await this.lsConfig() as { Paths?: string[] } | null;
+    const stylesPath = config?.Paths?.[config.Paths.length - 1];
+    return stylesPath ? ensureAbsolutePath(stylesPath, this.app.vault) : null;
+  }
+
+  public async getStyleRules(styleName: string): Promise<string[]> {
+    const stylesPath = await this.getStylesPath();
+    if (!stylesPath) {
+      return [];
+    }
+
+    try {
+      const entries = await fs.readdir(path.join(stylesPath, styleName));
+      return entries
+        .filter((entry) => /\.ya?ml$/i.test(entry))
+        .map((entry) => entry.replace(/\.ya?ml$/i, ''))
+        .sort();
+    } catch {
+      return [];
+    }
+  }
+
+  public async getStyleRuleOverrides(styleName: string): Promise<{ rules: string[]; overrides: Map<string, RuleOverride> }> {
+    const rules = await this.getStyleRules(styleName);
+    const configPath = await this.getWritableConfigPath();
+    const text = await fs.readFile(configPath, 'utf8').catch(() => '');
+
+    const overrides = new Map<string, RuleOverride>();
+    for (const rule of rules) {
+      overrides.set(rule, parseRuleOverride(readSectionKeyValue(text, '*.md', `${styleName}.${rule}`)));
+    }
+
+    return { rules, overrides };
+  }
+
+  public async setRuleOverride(styleName: string, ruleName: string, override: RuleOverride): Promise<void> {
+    const configPath = await this.getWritableConfigPath();
+    let text = await fs.readFile(configPath, 'utf8').catch(() => '');
+
+    const key = `${styleName}.${ruleName}`;
+    const value = ruleOverrideToValue(override);
+    text = value === null
+      ? removeSectionKey(text, '*.md', key)
+      : setSectionKeyValue(text, '*.md', key, value);
+
+    await fs.writeFile(configPath, text, 'utf8');
     void this.checkCurrentFile();
   }
 
