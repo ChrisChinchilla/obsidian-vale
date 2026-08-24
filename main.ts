@@ -7,7 +7,8 @@ import {
   PluginSettingTab,
   Setting,
   Notice,
-  debounce
+  debounce,
+  requestUrl
 } from 'obsidian';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -57,6 +58,9 @@ interface ValePluginSettings {
   minAlertLevel: ValeSeverity;
   maxNumberOfProblems: number;
   ignoredChecks: string;
+  manageValeInstall: boolean;
+  managedValeVersion: string;
+  valeOnboardingShown: boolean;
   severityColors: {
     error: string;
     warning: string;
@@ -73,6 +77,9 @@ const DEFAULT_SETTINGS: ValePluginSettings = {
   minAlertLevel: 'suggestion',
   maxNumberOfProblems: 100,
   ignoredChecks: '',
+  manageValeInstall: true,
+  managedValeVersion: '',
+  valeOnboardingShown: false,
   severityColors: {
     error: '#ff0000',
     warning: '#ffa500',
@@ -112,6 +119,9 @@ export default class ValePlugin extends Plugin {
 
     // Add settings tab
     this.addSettingTab(new ValeSettingTab(this.app, this));
+
+    // Verify Vale is runnable, installing a managed copy if it isn't
+    void this.verifyOrInstallVale();
 
     // Register commands
     this.addCommand({
@@ -190,6 +200,14 @@ export default class ValePlugin extends Plugin {
       name: 'Show effective configuration',
       callback: () => {
         void this.showConfiguration();
+      }
+    });
+
+    this.addCommand({
+      id: 'install-or-update-vale',
+      name: 'Install or update Vale',
+      callback: () => {
+        void this.installOrUpdateVale();
       }
     });
 
@@ -328,12 +346,17 @@ export default class ValePlugin extends Plugin {
   private async resolveValePath(): Promise<string> {
     const valePath = this.settings.valePath;
 
-    if (!valePath || valePath === 'vale') {
-      const foundPath = await findValeInCommonPaths();
-      return foundPath || 'vale';
+    if (valePath && valePath !== 'vale') {
+      return valePath;
     }
 
-    return valePath;
+    const managedPath = this.getManagedValeBinaryPath();
+    if (await this.pathExists(managedPath)) {
+      return managedPath;
+    }
+
+    const foundPath = await findValeInCommonPaths();
+    return foundPath || 'vale';
   }
 
   private resolveConfigPath(): string {
@@ -347,6 +370,143 @@ export default class ValePlugin extends Plugin {
   private execOptions(): { cwd?: string } {
     const basePath = getVaultBasePath(this.app.vault);
     return basePath ? { cwd: basePath } : {};
+  }
+
+  private async pathExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private getManagedValeDir(): string {
+    return path.join(getVaultBasePath(this.app.vault), this.app.vault.configDir, 'plugins', this.manifest.id, 'vale-bin');
+  }
+
+  private getManagedValeBinaryPath(): string {
+    return path.join(this.getManagedValeDir(), os.platform() === 'win32' ? 'vale.exe' : 'vale');
+  }
+
+  /**
+   * Maps the current OS/arch to the matching asset name on Vale's GitHub
+   * releases, e.g. `vale_3.18.0_macOS_arm64.tar.gz`.
+   */
+  private getValeAssetSuffix(): { osName: string; archName: string; ext: string } {
+    const platform = os.platform();
+    const archName = os.arch() === 'arm64' ? 'arm64' : '64-bit';
+
+    if (platform === 'darwin') {
+      return { osName: 'macOS', archName, ext: 'tar.gz' };
+    }
+    if (platform === 'linux') {
+      return { osName: 'Linux', archName, ext: 'tar.gz' };
+    }
+    if (platform === 'win32') {
+      return { osName: 'Windows', archName, ext: 'zip' };
+    }
+    throw new Error(`Unsupported platform for a managed Vale install: ${platform}`);
+  }
+
+  private async fetchLatestValeRelease(): Promise<{ version: string; assetName: string; downloadUrl: string }> {
+    const response = await requestUrl({ url: 'https://api.github.com/repos/errata-ai/vale/releases/latest' });
+    const data = response.json as { tag_name: string; assets: { name: string; browser_download_url: string }[] };
+
+    const version = data.tag_name.replace(/^v/, '');
+    const { osName, archName, ext } = this.getValeAssetSuffix();
+    const assetName = `vale_${version}_${osName}_${archName}.${ext}`;
+    const asset = data.assets.find((a) => a.name === assetName);
+
+    if (!asset) {
+      throw new Error(`No Vale release asset found for this platform (expected ${assetName})`);
+    }
+
+    return { version, assetName, downloadUrl: asset.browser_download_url };
+  }
+
+  /**
+   * Downloads and installs a managed copy of Vale, switching the plugin to
+   * use it. Safe to call when a managed copy is already up to date - it's a
+   * no-op unless `force` is set or the version has changed.
+   */
+  private async installManagedVale(force: boolean): Promise<string | null> {
+    const managedDir = this.getManagedValeDir();
+    const managedPath = this.getManagedValeBinaryPath();
+
+    try {
+      const release = await this.fetchLatestValeRelease();
+
+      if (!force && this.settings.managedValeVersion === release.version && await this.pathExists(managedPath)) {
+        return managedPath;
+      }
+
+      new Notice(`Downloading Vale ${release.version}…`);
+      await fs.mkdir(managedDir, { recursive: true });
+
+      const archivePath = path.join(managedDir, release.assetName);
+      const download = await requestUrl({ url: release.downloadUrl });
+      await fs.writeFile(archivePath, Buffer.from(download.arrayBuffer));
+
+      // Windows' bundled bsdtar handles .zip too, so `tar -xf` works for both archive types.
+      await execFileAsync('tar', ['-xf', archivePath, '-C', managedDir]);
+      await fs.unlink(archivePath).catch(() => { /* best-effort cleanup */ });
+
+      if (os.platform() !== 'win32') {
+        await fs.chmod(managedPath, 0o755);
+      }
+
+      this.settings.valePath = managedPath;
+      this.settings.managedValeVersion = release.version;
+      await this.saveSettings();
+
+      new Notice(`Vale ${release.version} installed`);
+      return managedPath;
+    } catch (error) {
+      logger.error('Failed to install Vale:', error instanceof Error ? error.message : String(error));
+      new Notice(`Failed to install Vale: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+  }
+
+  public async installOrUpdateVale(): Promise<void> {
+    await this.installManagedVale(true);
+  }
+
+  /**
+   * Runs once at startup: confirms the resolved Vale binary actually runs,
+   * installing a managed copy if nothing usable was found (and the user
+   * hasn't opted out), or mentioning the managed-install option once if an
+   * existing system install is being used instead.
+   */
+  private async verifyOrInstallVale(): Promise<void> {
+    const resolvedPath = await this.resolveValePath();
+
+    try {
+      await execFileAsync(resolvedPath, ['--version'], this.execOptions());
+
+      if (!this.settings.valeOnboardingShown) {
+        this.settings.valeOnboardingShown = true;
+        await this.saveSettings();
+
+        if (resolvedPath !== this.getManagedValeBinaryPath()) {
+          new Notice(
+            'Vale Linter: using your existing Vale install. This plugin can also download and manage its own copy of Vale - see Settings → Vale Linter → "Install or update Vale".',
+            12000
+          );
+        }
+      }
+      return;
+    } catch {
+      // Vale isn't runnable at the resolved path - fall through to managed install.
+    }
+
+    if (!this.settings.manageValeInstall) {
+      return;
+    }
+
+    new Notice('Vale not found - Vale Linter is installing a managed copy…');
+    await this.installManagedVale(false);
   }
 
   private matchesIgnoredCheck(checkName: string): boolean {
@@ -646,6 +806,31 @@ class ValeSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.valePath = value || 'vale';
           await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Manage Vale install')
+      .setDesc('If Vale isn\'t found on your system, automatically download and manage a copy instead of requiring a manual install')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.manageValeInstall)
+        .onChange(async (value) => {
+          this.plugin.settings.manageValeInstall = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Install or update Vale')
+      .setDesc(
+        this.plugin.settings.managedValeVersion
+          ? `Managed Vale ${this.plugin.settings.managedValeVersion} is installed`
+          : 'Download and manage a copy of Vale, or update the managed copy to the latest release'
+      )
+      .addButton(button => button
+        .setButtonText('Install or update')
+        .onClick(async () => {
+          button.setDisabled(true).setButtonText('Installing…');
+          await this.plugin.installOrUpdateVale();
+          this.display();
         }));
 
     new Setting(containerEl)

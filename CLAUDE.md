@@ -50,7 +50,7 @@ Compared against two more mature Vale integrations to find gaps worth closing:
 - [ ] In-app style package browser/installer (mirrors `StyleSettings.tsx` in the original plugin) — replaces the current "run `vale sync` yourself" workflow.
 - [ ] Per-rule settings UI — enable/disable individual checks and override their severity from within Obsidian (mirrors `RuleSettings.tsx`).
 - [ ] `.vale.ini` generation/management — plugin writes and maintains `StylesPath`/`BasedOnStyles` instead of requiring manual edits (mirrors `ValeConfigManager.ts`).
-- [ ] Managed Vale binary install/update ("Install or Update Vale" command, mirrors `vale.install` in vale-vscode) instead of requiring a pre-existing install.
+- [x] Managed Vale binary install/update ("Install or update Vale" command, mirrors `vale.install` in vale-vscode) instead of requiring a pre-existing install. On startup, if no runnable `vale` is found (setting, common paths, or PATH), the plugin downloads the right release asset from `errata-ai/vale`'s GitHub releases into `<vault>/.obsidian/plugins/vale-linter/vale-bin/` and switches `valePath` to it, unless `manageValeInstall` is turned off. If an existing install is found instead, a one-time Notice mentions the managed-install option rather than switching automatically. Extraction shells out to the system `tar` (bsdtar on Windows 10+ handles `.zip` too), so no new npm dependency was added.
 - [ ] Optional Docker execution mode (mirrors `vale.docker.*` in vale-vscode).
 - [ ] Optional remote Vale-server execution mode, as an alternative to local CLI exec (mirrors the original plugin's `server.url` mode).
 
