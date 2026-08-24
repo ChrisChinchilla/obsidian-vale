@@ -424,3 +424,15 @@
 .vale-tooltip-suggestion-button:active {
   transform: translateX(2px) scale(0.98);
 }
+
+/* Style browser modal */
+.vale-style-browser-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Rule settings modal */
+.vale-rule-settings-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}

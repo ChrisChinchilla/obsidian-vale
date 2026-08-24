@@ -3,6 +3,15 @@ import * as fs from 'fs';
 import { Vault } from 'obsidian';
 
 /**
+ * Returns the vault's base path on disk, or an empty string if it can't be
+ * determined (e.g. on mobile, where there is no filesystem adapter).
+ */
+export function getVaultBasePath(vault: Vault): string {
+  const adapter = vault.adapter as { basePath?: string; getBasePath?: () => string };
+  return adapter.basePath || adapter.getBasePath?.() || '';
+}
+
+/**
  * Ensures that a path is absolute. If the path is relative, it will be
  * resolved relative to the vault's base path.
  */
@@ -15,9 +24,7 @@ export function ensureAbsolutePath(inputPath: string, vault: Vault): string {
     return inputPath;
   }
 
-  const adapter = vault.adapter as { basePath?: string; getBasePath?: () => string };
-  const basePath = adapter.basePath || adapter.getBasePath?.() || '';
-  return path.join(basePath, inputPath);
+  return path.join(getVaultBasePath(vault), inputPath);
 }
 
 /**

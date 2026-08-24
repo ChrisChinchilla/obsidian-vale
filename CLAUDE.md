@@ -27,3 +27,31 @@ An Obsidian plugin (`vale-linter`, display name "Vale Linter") that shells out t
 ## Release process
 
 Tagging a commit (tag name = plain version, e.g. `2.0.6`, no `v` prefix — matches `manifest.json`'s `version`) and pushing the tag triggers `.github/workflows/release.yml`, which installs deps, runs `npm run build`, verifies the tag matches `manifest.json`'s version (fails the build otherwise), creates a GitHub Release, and attaches `main.js`, `manifest.json`, and `styles.css` as individual release assets — required for BRAT and manual installs to work. `.github/workflows/build.yaml` is a separate CI-only sanity build on push/PR to `main`; it does not publish anything.
+
+## Feature roadmap
+
+Compared against two more mature Vale integrations to find gaps worth closing:
+[`marcusolsson/obsidian-vale`](https://github.com/marcusolsson/obsidian-vale) (archived, the plugin this repo was forked from) and
+[`ChrisChinchilla/vale-vscode`](https://github.com/ChrisChinchilla/vale-vscode) (a fork of the deprecated `errata-ai/vale-vscode`, the most feature-complete Vale editor integration available). Items below are grouped by rough size; check them off as they land. Note: `ensureAbsolutePath()` in `src/utils.ts` (see Architecture above) is dead code today — fixing it is bundled into the roadmap since several items below depend on config paths actually resolving correctly.
+
+**High value, low effort:**
+- [x] `minAlertLevel`-style setting: minimum severity to surface at all (distinct from just recoloring low-severity issues).
+- [x] `maxNumberOfProblems` cap, to avoid flooding the editor/status bar on huge documents.
+- [x] "Sync styles" command — just shells out to `vale sync` via `execFile`, no UI required.
+- [x] "Show effective configuration" command — surface Vale's resolved config for debugging (mirrors `vale.showConfig` in vale-vscode).
+- [x] Wire up `ensureAbsolutePath()` in `src/utils.ts` so a relative `configPath` setting actually resolves against the vault base path, instead of being used as-is.
+
+**Medium:**
+- [x] Vocab management — "Add to accept list" / "Add to reject list" commands/hover actions that write to Vale's vocab files (mirrors vale-vscode). Implemented via `vale ls-config` (parsed for `StylesPath`/`Vocab`) plus hover buttons on spelling issues; requires `Vocab = <name>` set in `.vale.ini`.
+- [x] Alert filter setting — suppress specific checks by name/glob, independent of severity. Implemented as a comma-separated `ignoredChecks` setting with `*` wildcard support.
+- [x] A dedicated issues panel/view (an Obsidian `ItemView`) listing all issues in the current file, not just inline decorations (mirrors `ValeView.tsx` in the original plugin). Reuses the legacy `.obsidian-vale .alert` CSS classes already present in `styles.css`. Vault-wide (not just current file) issue listing is not implemented — scoped to the active file only.
+
+**Larger/architectural:**
+- [x] In-app style package browser/installer (mirrors `StyleSettings.tsx` in the original plugin) — replaces the current "run `vale sync` yourself" workflow. A `ValeStyleBrowserModal` (command "Browse styles" and a settings-tab button) lists packages from `errata-ai/packages`' `library.json` registry; installing/removing a style edits the `Packages` (top-level) and `BasedOnStyles` (under `[*.md]`) keys via small targeted line-based helpers in `src/valeConfigEdit.ts` (not a full ini rewrite - see the note on the `.vale.ini` generation/management item below), then shells out to `vale sync` to actually download it, mirroring the original's "one toggle = install + enable" UX but via Vale's own supported `Packages` mechanism instead of the original's direct zip-download approach. Verified end-to-end against a real `vale` binary that `Packages = <name>` + `vale sync` downloads and extracts to `<StylesPath>/<name>`, matching what "Remove" deletes.
+- [x] Per-rule settings UI — enable/disable individual checks and override their severity from within Obsidian (mirrors `RuleSettings.tsx`). A gear icon next to each installed style in the style browser opens `ValeRuleSettingsModal`, which lists that style's rules (read from its `.yml` files in `StylesPath/<style>/`) with a per-rule dropdown (Default/Suggestion/Warning/Error/Disabled) backed by `${style}.${rule} = NO|suggestion|warning|error` keys under `[*.md]`, using the same targeted `src/valeConfigEdit.ts` line editing as the style browser (extended with single-value get/set/remove helpers). Verified end-to-end against a real `vale` binary that disabling a rule this way actually removes it from lint output. Rule management for the built-in `Vale` style itself isn't included (mirrors the original plugin's same limitation) since its rules aren't exposed as files on disk.
+- [ ] `.vale.ini` generation/management — plugin writes and maintains `StylesPath`/`BasedOnStyles` instead of requiring manual edits (mirrors `ValeConfigManager.ts`).
+- [x] Managed Vale binary install/update ("Install or update Vale" command, mirrors `vale.install` in vale-vscode) instead of requiring a pre-existing install. On startup, if no runnable `vale` is found (setting, common paths, or PATH), the plugin downloads the right release asset from `errata-ai/vale`'s GitHub releases into `<vault>/.obsidian/plugins/vale-linter/vale-bin/` and switches `valePath` to it, unless `manageValeInstall` is turned off. If an existing install is found instead, a one-time Notice mentions the managed-install option rather than switching automatically. Extraction shells out to the system `tar` (bsdtar on Windows 10+ handles `.zip` too), so no new npm dependency was added. The settings tab also has an "Uninstall" button (shown once a managed copy exists) that deletes the managed directory and resets `valePath` back to `'vale'` if it was pointing at the managed binary.
+- [ ] Optional Docker execution mode (mirrors `vale.docker.*` in vale-vscode).
+- [ ] Optional remote Vale-server execution mode, as an alternative to local CLI exec (mirrors the original plugin's `server.url` mode).
+
+**Not planned:** multi-root-workspace-style per-folder Vale instances (vale-vscode) have no real Obsidian equivalent, since a vault is single-root — skipping rather than forcing a fit.
