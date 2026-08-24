@@ -18,7 +18,22 @@ import * as fs from 'fs/promises';
 import { valeDecorationsExtension, setValeDecorationsEffect, setVocabHandler } from './src/valeDecorations';
 import { ensureAbsolutePath, findValeInCommonPaths, getVaultBasePath } from './src/utils';
 import { ValeIssuesView, VALE_ISSUES_VIEW_TYPE } from './src/valeIssuesView';
+import { ValeStyleBrowserModal } from './src/valeStyleBrowserModal';
+import {
+  addToSectionList,
+  addToTopLevelList,
+  readSectionListKey,
+  removeFromSectionList,
+  removeFromTopLevelList
+} from './src/valeConfigEdit';
 import { logger } from './src/logger';
+
+const DEFAULT_VALE_INI = `StylesPath = .vale/styles
+Packages =
+
+[*.md]
+BasedOnStyles = Vale
+`;
 
 const execFileAsync = promisify(execFile);
 
@@ -192,6 +207,14 @@ export default class ValePlugin extends Plugin {
       name: 'Sync styles',
       callback: () => {
         void this.syncStyles();
+      }
+    });
+
+    this.addCommand({
+      id: 'browse-styles',
+      name: 'Browse styles',
+      callback: () => {
+        new ValeStyleBrowserModal(this.app, this).open();
       }
     });
 
@@ -378,6 +401,24 @@ export default class ValePlugin extends Plugin {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /** Runs `vale ls-config` and returns the parsed JSON, or null if Vale can't resolve a config at all. */
+  private async lsConfig(): Promise<Record<string, unknown> | null> {
+    const valePath = await this.resolveValePath();
+    const configPath = this.resolveConfigPath();
+
+    const args = ['ls-config'];
+    if (configPath) {
+      args.push(`--config=${configPath}`);
+    }
+
+    try {
+      const { stdout } = await execFileAsync(valePath, args, this.execOptions());
+      return JSON.parse(stdout) as Record<string, unknown>;
+    } catch {
+      return null;
     }
   }
 
@@ -583,41 +624,81 @@ export default class ValePlugin extends Plugin {
   }
 
   private async getStylesInfo(): Promise<{ stylesPath: string; vocab: string } | null> {
-    const valePath = await this.resolveValePath();
-    const configPath = this.resolveConfigPath();
-
-    const args = ['ls-config'];
-    if (configPath) {
-      args.push(`--config=${configPath}`);
-    }
-
-    try {
-      const { stdout } = await execFileAsync(valePath, args, this.execOptions());
-      // `vale ls-config` has no `StylesPath` key: the resolved styles
-      // directories (global styles dir, then the configured StylesPath)
-      // are listed in `Paths`, and `Vocab` is an array of vocab names.
-      const config = JSON.parse(stdout) as { Paths?: string[]; Vocab?: string[] };
-
-      const stylesPath = config.Paths?.[config.Paths.length - 1];
-      if (!stylesPath) {
-        new Notice('Vale configuration has no StylesPath set');
-        return null;
-      }
-      const vocab = config.Vocab?.[0];
-      if (!vocab) {
-        new Notice('No Vocab configured — add "Vocab = YourVocabName" to your .vale.ini');
-        return null;
-      }
-
-      return {
-        stylesPath: ensureAbsolutePath(stylesPath, this.app.vault),
-        vocab
-      };
-    } catch (error) {
-      logger.error('Failed to read Vale configuration:', error instanceof Error ? error.message : String(error));
-      new Notice(`Failed to read Vale configuration: ${error instanceof Error ? error.message : String(error)}`);
+    // `vale ls-config` has no `StylesPath` key: the resolved styles
+    // directories (global styles dir, then the configured StylesPath)
+    // are listed in `Paths`, and `Vocab` is an array of vocab names.
+    const config = await this.lsConfig() as { Paths?: string[]; Vocab?: string[] } | null;
+    if (!config) {
+      new Notice('Failed to read Vale configuration');
       return null;
     }
+
+    const stylesPath = config.Paths?.[config.Paths.length - 1];
+    if (!stylesPath) {
+      new Notice('Vale configuration has no StylesPath set');
+      return null;
+    }
+    const vocab = config.Vocab?.[0];
+    if (!vocab) {
+      new Notice('No Vocab configured — add "Vocab = YourVocabName" to your .vale.ini');
+      return null;
+    }
+
+    return {
+      stylesPath: ensureAbsolutePath(stylesPath, this.app.vault),
+      vocab
+    };
+  }
+
+  /** The .vale.ini file Vale is actually using, creating a minimal one at the vault root if none exists. */
+  private async getWritableConfigPath(): Promise<string> {
+    const config = await this.lsConfig();
+    const rootIni = config?.RootINI as string | undefined;
+    if (rootIni) {
+      return rootIni;
+    }
+
+    const target = this.resolveConfigPath() || path.join(getVaultBasePath(this.app.vault), '.vale.ini');
+    if (!(await this.pathExists(target))) {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, DEFAULT_VALE_INI, 'utf8');
+      new Notice(`Created a new Vale config at ${target}`);
+    }
+    return target;
+  }
+
+  public async getEnabledStyles(): Promise<string[]> {
+    const configPath = await this.getWritableConfigPath();
+    const text = await fs.readFile(configPath, 'utf8').catch(() => '');
+    return readSectionListKey(text, '*.md', 'BasedOnStyles');
+  }
+
+  public async installStyle(name: string): Promise<void> {
+    const configPath = await this.getWritableConfigPath();
+    let text = await fs.readFile(configPath, 'utf8').catch(() => '');
+    text = addToTopLevelList(text, 'Packages', name);
+    text = addToSectionList(text, '*.md', 'BasedOnStyles', name);
+    await fs.writeFile(configPath, text, 'utf8');
+
+    await this.syncStyles();
+    void this.checkCurrentFile();
+  }
+
+  public async removeStyle(name: string): Promise<void> {
+    const configPath = await this.getWritableConfigPath();
+    let text = await fs.readFile(configPath, 'utf8').catch(() => '');
+    text = removeFromTopLevelList(text, 'Packages', name);
+    text = removeFromSectionList(text, '*.md', 'BasedOnStyles', name);
+    await fs.writeFile(configPath, text, 'utf8');
+
+    const config = await this.lsConfig() as { Paths?: string[] } | null;
+    const stylesPath = config?.Paths?.[config.Paths.length - 1];
+    if (stylesPath) {
+      await fs.rm(path.join(ensureAbsolutePath(stylesPath, this.app.vault), name), { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });
+    }
+
+    new Notice(`Removed ${name} from Vale styles`);
+    void this.checkCurrentFile();
   }
 
   private async addToVocabList(word: string, list: 'accept' | 'reject'): Promise<void> {
@@ -875,6 +956,15 @@ class ValeSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.configPath = value;
           await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName('Browse styles')
+      .setDesc('Install or remove Vale style packages from the official registry')
+      .addButton(button => button
+        .setButtonText('Browse styles')
+        .onClick(() => {
+          new ValeStyleBrowserModal(this.app, this.plugin).open();
         }));
 
     new Setting(containerEl)
