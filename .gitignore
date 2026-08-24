@@ -2,7 +2,8 @@
 *.iml
 .idea
 
-.claude
+.claude/*
+!.claude/skills/
 
 # npm
 node_modules

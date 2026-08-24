@@ -26,7 +26,7 @@ An Obsidian plugin (`vale-linter`, display name "Vale Linter") that shells out t
 
 ## Release process
 
-Tagging a commit (tag name = plain version, e.g. `2.0.6`, no `v` prefix — matches `manifest.json`'s `version`) and pushing the tag triggers `.github/workflows/release.yml`, which installs deps, runs `npm run build`, verifies the tag matches `manifest.json`'s version (fails the build otherwise), creates a GitHub Release, and attaches `main.js`, `manifest.json`, and `styles.css` as individual release assets — required for BRAT and manual installs to work. `.github/workflows/build.yaml` is a separate CI-only sanity build on push/PR to `main`; it does not publish anything.
+Tagging a commit (tag name = plain version, e.g. `2.0.6`, no `v` prefix — matches `manifest.json`'s `version`) and pushing the tag triggers `.github/workflows/release.yml`, which installs deps, runs `npm run build`, verifies the tag matches `manifest.json`'s version (fails the build otherwise), creates a GitHub Release, and attaches `main.js`, `manifest.json`, and `styles.css` as individual release assets — required for BRAT and manual installs to work. `.github/workflows/build.yaml` is a separate CI-only sanity build on push/PR to `main`; it does not publish anything. `.npmrc` sets `tag-version-prefix=` so `npm version <bump>` produces a correctly un-prefixed tag directly (its default `v`-prefixed behavior doesn't match this repo's tag convention). See the `release` skill (`.claude/skills/release/`) for the full step-by-step process, including how to cut a pre-release.
 
 ## Feature roadmap
 
