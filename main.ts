@@ -413,20 +413,25 @@ export default class ValePlugin extends Plugin {
 
     try {
       const { stdout } = await execFileAsync(valePath, args, this.execOptions());
-      const config = JSON.parse(stdout) as { StylesPath?: string; Vocab?: string };
+      // `vale ls-config` has no `StylesPath` key: the resolved styles
+      // directories (global styles dir, then the configured StylesPath)
+      // are listed in `Paths`, and `Vocab` is an array of vocab names.
+      const config = JSON.parse(stdout) as { Paths?: string[]; Vocab?: string[] };
 
-      if (!config.StylesPath) {
+      const stylesPath = config.Paths?.[config.Paths.length - 1];
+      if (!stylesPath) {
         new Notice('Vale configuration has no StylesPath set');
         return null;
       }
-      if (!config.Vocab) {
+      const vocab = config.Vocab?.[0];
+      if (!vocab) {
         new Notice('No Vocab configured — add "Vocab = YourVocabName" to your .vale.ini');
         return null;
       }
 
       return {
-        stylesPath: ensureAbsolutePath(config.StylesPath, this.app.vault),
-        vocab: config.Vocab
+        stylesPath: ensureAbsolutePath(stylesPath, this.app.vault),
+        vocab
       };
     } catch (error) {
       logger.error('Failed to read Vale configuration:', error instanceof Error ? error.message : String(error));
