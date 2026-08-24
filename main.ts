@@ -473,6 +473,26 @@ export default class ValePlugin extends Plugin {
     await this.installManagedVale(true);
   }
 
+  public async uninstallManagedVale(): Promise<void> {
+    const managedDir = this.getManagedValeDir();
+    const managedPath = this.getManagedValeBinaryPath();
+
+    try {
+      await fs.rm(managedDir, { recursive: true, force: true });
+    } catch (error) {
+      logger.error('Failed to remove managed Vale install:', error instanceof Error ? error.message : String(error));
+      new Notice(`Failed to remove managed Vale install: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+
+    if (this.settings.valePath === managedPath) {
+      this.settings.valePath = 'vale';
+    }
+    this.settings.managedValeVersion = '';
+    await this.saveSettings();
+    new Notice('Managed Vale install removed');
+  }
+
   /**
    * Runs once at startup: confirms the resolved Vale binary actually runs,
    * installing a managed copy if nothing usable was found (and the user
@@ -818,20 +838,33 @@ class ValeSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl)
-      .setName('Install or update Vale')
-      .setDesc(
-        this.plugin.settings.managedValeVersion
-          ? `Managed Vale ${this.plugin.settings.managedValeVersion} is installed`
-          : 'Download and manage a copy of Vale, or update the managed copy to the latest release'
-      )
-      .addButton(button => button
-        .setButtonText('Install or update')
-        .onClick(async () => {
-          button.setDisabled(true).setButtonText('Installing…');
-          await this.plugin.installOrUpdateVale();
-          this.display();
-        }));
+    {
+      const installSetting = new Setting(containerEl)
+        .setName('Install or update Vale')
+        .setDesc(
+          this.plugin.settings.managedValeVersion
+            ? `Managed Vale ${this.plugin.settings.managedValeVersion} is installed`
+            : 'Download and manage a copy of Vale, or update the managed copy to the latest release'
+        )
+        .addButton(button => button
+          .setButtonText('Install or update')
+          .onClick(async () => {
+            button.setDisabled(true).setButtonText('Installing…');
+            await this.plugin.installOrUpdateVale();
+            this.display();
+          }));
+
+      if (this.plugin.settings.managedValeVersion) {
+        installSetting.addButton(button => button
+          .setButtonText('Uninstall')
+          .setWarning()
+          .onClick(async () => {
+            button.setDisabled(true).setButtonText('Removing…');
+            await this.plugin.uninstallManagedVale();
+            this.display();
+          }));
+      }
+    }
 
     new Setting(containerEl)
       .setName('Config file path')
