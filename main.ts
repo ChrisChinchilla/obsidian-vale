@@ -212,7 +212,8 @@ export default class ValePlugin extends Plugin {
       id: 'sync-styles',
       name: 'Sync styles',
       callback: () => {
-        void this.syncStyles();
+        // syncStyles reports the failure to the user before rejecting.
+        void this.syncStyles().catch(() => { /* handled by syncStyles */ });
       }
     });
 
@@ -285,6 +286,8 @@ export default class ValePlugin extends Plugin {
 
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', () => {
+        const activeFile = this.app.workspace.getActiveFile();
+        this.refreshIssuesViews(activeFile ? this.currentIssues.get(activeFile.path) ?? [] : []);
         if (this.settings.enableAutoCheck) {
           void this.checkCurrentFile();
         }
@@ -679,18 +682,32 @@ export default class ValePlugin extends Plugin {
     return readSectionListKey(text, '*.md', 'BasedOnStyles');
   }
 
+  private validateStyleName(name: string): void {
+    if (!name || name === '.' || name === '..' || path.basename(name) !== name || /[\u0000-\u001f\u007f]/.test(name)) {
+      throw new Error(`Invalid Vale style name: ${JSON.stringify(name)}`);
+    }
+  }
+
   public async installStyle(name: string): Promise<void> {
+    this.validateStyleName(name);
     const configPath = await this.getWritableConfigPath();
-    let text = await fs.readFile(configPath, 'utf8').catch(() => '');
+    const originalText = await fs.readFile(configPath, 'utf8').catch(() => '');
+    let text = originalText;
     text = addToTopLevelList(text, 'Packages', name);
     text = addToSectionList(text, '*.md', 'BasedOnStyles', name);
     await fs.writeFile(configPath, text, 'utf8');
 
-    await this.syncStyles();
+    try {
+      await this.syncStyles();
+    } catch (error) {
+      await fs.writeFile(configPath, originalText, 'utf8');
+      throw error;
+    }
     void this.checkCurrentFile();
   }
 
   public async removeStyle(name: string): Promise<void> {
+    this.validateStyleName(name);
     const configPath = await this.getWritableConfigPath();
     let text = await fs.readFile(configPath, 'utf8').catch(() => '');
     text = removeFromTopLevelList(text, 'Packages', name);
@@ -699,7 +716,12 @@ export default class ValePlugin extends Plugin {
 
     const stylesPath = await this.getStylesPath();
     if (stylesPath) {
-      await fs.rm(path.join(stylesPath, name), { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });
+      const stylesRoot = path.resolve(stylesPath);
+      const styleDir = path.resolve(stylesRoot, name);
+      if (path.dirname(styleDir) !== stylesRoot) {
+        throw new Error(`Refusing to remove a style outside ${stylesRoot}`);
+      }
+      await fs.rm(styleDir, { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });
     }
 
     new Notice(`Removed ${name} from Vale styles`);
@@ -713,6 +735,7 @@ export default class ValePlugin extends Plugin {
   }
 
   public async getStyleRules(styleName: string): Promise<string[]> {
+    this.validateStyleName(styleName);
     const stylesPath = await this.getStylesPath();
     if (!stylesPath) {
       return [];
@@ -743,6 +766,7 @@ export default class ValePlugin extends Plugin {
   }
 
   public async setRuleOverride(styleName: string, ruleName: string, override: RuleOverride): Promise<void> {
+    this.validateStyleName(styleName);
     const configPath = await this.getWritableConfigPath();
     let text = await fs.readFile(configPath, 'utf8').catch(() => '');
 
@@ -808,6 +832,7 @@ export default class ValePlugin extends Plugin {
     } catch (error) {
       logger.error('Vale sync failed:', error instanceof Error ? error.message : String(error));
       new Notice(`Vale sync failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw error;
     }
   }
 
