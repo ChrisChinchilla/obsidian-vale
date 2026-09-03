@@ -33,6 +33,7 @@ import {
   type RuleOverride
 } from './src/valeConfigEdit';
 import { logger } from './src/logger';
+import { runValeOnText, type ValeIssue } from './src/valeRunner';
 
 const DEFAULT_VALE_INI = `StylesPath = .vale/styles
 Packages =
@@ -42,25 +43,6 @@ BasedOnStyles = Vale
 `;
 
 const execFileAsync = promisify(execFile);
-
-export interface ValeIssue {
-  Action: {
-    Name: string;
-    Params: string[];
-  };
-  Check: string;
-  Description: string;
-  Line: number;
-  Link: string;
-  Message: string;
-  Severity: string;
-  Span: [number, number];
-  Match: string;
-}
-
-interface ValeOutput {
-  [filename: string]: ValeIssue[];
-}
 
 type ValeSeverity = 'suggestion' | 'warning' | 'error';
 
@@ -111,9 +93,10 @@ const DEFAULT_SETTINGS: ValePluginSettings = {
 export default class ValePlugin extends Plugin {
   settings!: ValePluginSettings;
   public currentIssues: Map<string, ValeIssue[]> = new Map();
-  private debouncedCheck!: () => void;
+  private debouncedCheck!: (editor: Editor, view: MarkdownView) => void;
   private debouncedDelay = -1;
   private statusBarItem!: HTMLElement;
+  private checkVersions = new Map<string, number>();
 
   async onload() {
     await this.loadSettings();
@@ -148,8 +131,10 @@ export default class ValePlugin extends Plugin {
     this.addCommand({
       id: 'check-current-file',
       name: 'Check current file',
-      editorCallback: () => {
-        void this.checkCurrentFile();
+      editorCallback: (editor, view) => {
+        if (view instanceof MarkdownView) {
+          void this.checkEditor(editor, view);
+        }
       }
     });
 
@@ -277,9 +262,9 @@ export default class ValePlugin extends Plugin {
 
     // Register events
     this.registerEvent(
-      this.app.workspace.on('editor-change', (_editor: Editor) => {
-        if (this.settings.enableAutoCheck) {
-          this.debouncedCheck();
+      this.app.workspace.on('editor-change', (editor: Editor, info) => {
+        if (this.settings.enableAutoCheck && info instanceof MarkdownView) {
+          this.debouncedCheck(editor, info);
         }
       })
     );
@@ -317,7 +302,7 @@ export default class ValePlugin extends Plugin {
     }
     this.debouncedDelay = this.settings.debounceDelay;
     this.debouncedCheck = debounce(
-      () => { void this.checkCurrentFile(); },
+      (editor: Editor, view: MarkdownView) => { void this.checkEditor(editor, view); },
       this.settings.debounceDelay,
       true
     );
@@ -335,44 +320,63 @@ export default class ValePlugin extends Plugin {
       return;
     }
 
-    const file = activeView.file;
+    await this.checkEditor(activeView.editor, activeView);
+  }
+
+  private async checkEditor(editor: Editor, view: MarkdownView) {
+    const file = view.file;
     if (!file) {
       return;
     }
 
-    this.statusBarItem.setText('Checking...');
+    const filePath = file.path;
+    const content = editor.getValue();
+    const version = (this.checkVersions.get(filePath) ?? 0) + 1;
+    this.checkVersions.set(filePath, version);
 
-    const tempPath = path.join(os.tmpdir(), `vale-${process.pid}-${Date.now()}.md`);
+    if (this.isActiveEditor(editor)) {
+      this.statusBarItem.setText('Checking...');
+    }
+
     try {
-      const content = await this.app.vault.read(file);
-      await fs.writeFile(tempPath, content, 'utf8');
+      const issues = this.filterIssues(await this.runVale(content, filePath));
 
-      const issues = this.filterIssues(await this.runVale(tempPath));
-
-      this.currentIssues.set(file.path, issues);
-      this.applyDecorations(activeView.editor, issues);
-      this.refreshIssuesViews(issues);
-
-      const counts = { error: 0, warning: 0, suggestion: 0 };
-      for (const issue of issues) {
-        const key = issue.Severity as keyof typeof counts;
-        if (key in counts) counts[key]++;
+      // A newer check, an edit made while Vale was running, or a reused view
+      // makes these results stale. Never decorate a different document.
+      if (
+        this.checkVersions.get(filePath) !== version ||
+        editor.getValue() !== content ||
+        view.file?.path !== filePath
+      ) {
+        return;
       }
-      this.statusBarItem.setText(
-        `Vale: ${counts.error} errors, ${counts.warning} warnings, ${counts.suggestion} suggestions`
-      );
+
+      this.currentIssues.set(filePath, issues);
+      this.applyDecorations(editor, issues);
+
+      if (this.isActiveEditor(editor)) {
+        this.refreshIssuesViews(issues);
+        const counts = { error: 0, warning: 0, suggestion: 0 };
+        for (const issue of issues) {
+          const key = issue.Severity as keyof typeof counts;
+          if (key in counts) counts[key]++;
+        }
+        this.statusBarItem.setText(
+          `Vale: ${counts.error} errors, ${counts.warning} warnings, ${counts.suggestion} suggestions`
+        );
+      }
 
     } catch (error) {
       logger.error('Vale check failed:', error instanceof Error ? error.message : String(error));
-      this.statusBarItem.setText('Error');
-      new Notice(`Vale check failed: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      try {
-        await fs.unlink(tempPath);
-      } catch {
-        // Ignore cleanup errors (file may not exist if write failed)
+      if (this.checkVersions.get(filePath) === version && this.isActiveEditor(editor)) {
+        this.statusBarItem.setText('Error');
+        new Notice(`Vale check failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
+  }
+
+  private isActiveEditor(editor: Editor): boolean {
+    return this.app.workspace.getActiveViewOfType(MarkdownView)?.editor === editor;
   }
 
   private async resolveValePath(): Promise<string> {
@@ -854,59 +858,14 @@ export default class ValePlugin extends Plugin {
     }
   }
 
-  private async runVale(filepath: string): Promise<ValeIssue[]> {
+  private async runVale(content: string, logicalPath: string): Promise<ValeIssue[]> {
     const valePath = await this.resolveValePath();
     const configPath = this.resolveConfigPath();
-
-    // Build arguments array for execFile (safer than shell string interpolation)
-    const args = ['--output=JSON'];
-    if (configPath) {
-      args.push(`--config=${configPath}`);
-    }
-    args.push(filepath);
-
-    try {
-      const { stdout, stderr } = await execFileAsync(valePath, args, this.execOptions());
-
-      if (stderr && !stderr.includes('warning')) {
-        // console.error('[Vale] stderr:', stderr);
-        throw new Error(stderr);
-      }
-
-      // console.log('[Vale] stdout length:', stdout?.length || 0);
-      const output: ValeOutput = JSON.parse(stdout || '{}');
-      const filename = Object.keys(output)[0];
-      const issues = output[filename] || [];
-      // console.log('[Vale] Found', issues.length, 'issues');
-
-      return issues;
-    } catch (error) {
-      // console.error('[Vale] Command failed:', error);
-      // Vale returns exit code 1 when there are issues, which is not an error
-      const execError = error as { stdout?: string };
-      if (execError.stdout) {
-        try {
-          const output: ValeOutput = JSON.parse(execError.stdout);
-          const filename = Object.keys(output)[0];
-          const issues = output[filename] || [];
-          // console.log('[Vale] Found', issues.length, 'issues (from error.stdout)');
-          return issues;
-        } catch {
-          // Failed to parse error.stdout
-          throw error;
-        }
-      }
-      throw error;
-    }
+    const cwd = getVaultBasePath(this.app.vault) || undefined;
+    return runValeOnText({ valePath, configPath, content, logicalPath, cwd });
   }
 
   public applyDecorations(editor: Editor, issues: ValeIssue[]) {
-    // Store issues for reference
-    const activeFile = this.app.workspace.getActiveFile();
-    if (activeFile) {
-      this.currentIssues.set(activeFile.path, issues);
-    }
-
     // Check if inline decorations are enabled
     if (!this.settings.enableInlineDecorations) {
       return;

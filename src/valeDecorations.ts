@@ -1,6 +1,6 @@
 import { EditorView, Decoration, DecorationSet, hoverTooltip } from '@codemirror/view';
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
-import type { ValeIssue } from '../main';
+import type { ValeIssue } from './valeRunner';
 
 // ============================================================================
 // Types and Constants
