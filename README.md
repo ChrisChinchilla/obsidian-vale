@@ -7,7 +7,7 @@ A plugin that integrates the [Vale](https://vale.sh/) prose linter with Obsidian
 - **Inline Issue Display**: See Vale issues highlighted directly in your Obsidian editor
 - **Real-time Checking**: Automatically checks the current editor buffer as you type, including unsaved changes (configurable)
 - **Severity Indicators**: Different visual styles for errors, warnings, and suggestions
-- **Hover Tooltips**: Hover over highlighted text to see detailed issue descriptions
+- **Interactive Hover Tooltips**: Move from highlighted text into a stable popup to review and apply suggestions
 - **Status Bar Integration**: Quick overview of issues in the current document
 - **Customizable**: Configure Vale path, config file, and visual styles
 

@@ -277,6 +277,10 @@
 }
 
 /* Hover tooltip styles */
+.cm-tooltip:has(.vale-tooltip-container) {
+  pointer-events: auto;
+}
+
 .vale-tooltip-container {
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
@@ -286,6 +290,7 @@
   font-size: 0.9em;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   font-family: var(--font-interface);
+  pointer-events: auto;
 }
 
 .vale-tooltip-severity {
