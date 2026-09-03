@@ -1,6 +1,6 @@
 import { EditorView, Decoration, DecorationSet, hoverTooltip } from '@codemirror/view';
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
-import type { ValeIssue } from '../main';
+import type { ValeIssue } from './valeRunner';
 
 // ============================================================================
 // Types and Constants
@@ -205,28 +205,6 @@ function applyValeAction(view: EditorView, issue: ValeIssue, suggestionIndex?: n
 // ============================================================================
 
 /**
- * Generate tooltip text for the title attribute (fallback)
- */
-function generateTooltipText(issue: ValeIssue): string {
-  let text = `${issue.Severity}: ${issue.Message}`;
-
-  if (issue.Action && issue.Action.Name) {
-    const { operationType, suggestions, needsSpellCheck } = parseValeAction(issue.Action);
-
-    if (operationType === 'remove') {
-      text += '\n\nAction: Remove';
-    } else if (needsSpellCheck) {
-      text += '\n\nSpelling suggestions available';
-    } else if (suggestions.length > 0) {
-      text += '\n\nSuggestions:\n' + suggestions.map(s => `  • ${s}`).join('\n');
-    }
-  }
-
-  text += `\n\n(${issue.Check})`;
-  return text;
-}
-
-/**
  * Create a remove button element
  */
 function createRemoveButton(view: EditorView, issue: ValeIssue): HTMLElement {
@@ -426,7 +404,7 @@ function createDecorations(
       attributes: {
         'data-vale-message': issue.Message,
         'data-vale-check': issue.Check,
-        'title': generateTooltipText(issue)
+        'aria-label': `${issue.Severity}: ${issue.Message} (${issue.Check})`
       },
       valeIssue: issue
     };
@@ -490,20 +468,23 @@ function createTooltipDOM(view: EditorView, issue: ValeIssue): HTMLElement {
 /**
  * Find the Vale issue at the given position
  */
-function findIssueAtPosition(pos: number, decorations: DecorationSet): ValeIssue | undefined {
-  let foundIssue: ValeIssue | undefined;
+function findIssueAtPosition(
+  pos: number,
+  decorations: DecorationSet
+): { issue: ValeIssue; from: number; to: number } | undefined {
+  let found: { issue: ValeIssue; from: number; to: number } | undefined;
 
   decorations.between(pos, pos, (from, to, deco) => {
     if (pos >= from && pos <= to) {
       const spec = deco.spec as Partial<ValeDecorationSpec>;
       if (spec.valeIssue) {
-        foundIssue = spec.valeIssue;
+        found = { issue: spec.valeIssue, from, to };
         return false;
       }
     }
   });
 
-  return foundIssue;
+  return found;
 }
 
 // ============================================================================
@@ -542,17 +523,20 @@ export const valeDecorationsField = StateField.define<DecorationSet>({
  * Create a hover tooltip extension for Vale issues
  */
 const valeHoverTooltip = hoverTooltip((view, pos) => {
-  const decorations = view.state.field(valeDecorationsField);
-  const issue = findIssueAtPosition(pos, decorations);
+  const match = findIssueAtPosition(pos, view.state.field(valeDecorationsField));
 
-  if (!issue) {
+  if (!match) {
     return null;
   }
 
   return {
-    pos,
+    // Anchor the tooltip to the entire decorated range. CodeMirror then keeps
+    // it open while the pointer moves across the issue or into the tooltip.
+    pos: match.from,
+    end: match.to,
     above: true,
-    create: () => ({ dom: createTooltipDOM(view, issue) })
+    arrow: true,
+    create: () => ({ dom: createTooltipDOM(view, match.issue) })
   };
 });
 

@@ -1,6 +1,6 @@
 import { ItemView, MarkdownView, WorkspaceLeaf } from 'obsidian';
 import type ValePlugin from '../main';
-import type { ValeIssue } from '../main';
+import type { ValeIssue } from './valeRunner';
 
 export const VALE_ISSUES_VIEW_TYPE = 'vale-issues-view';
 

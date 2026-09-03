@@ -5,15 +5,17 @@ A plugin that integrates the [Vale](https://vale.sh/) prose linter with Obsidian
 ## Features
 
 - **Inline Issue Display**: See Vale issues highlighted directly in your Obsidian editor
-- **Real-time Checking**: Automatically checks your document as you type (configurable)
+- **Real-time Checking**: Automatically checks the current editor buffer as you type, including unsaved changes (configurable)
 - **Severity Indicators**: Different visual styles for errors, warnings, and suggestions
-- **Hover Tooltips**: Hover over highlighted text to see detailed issue descriptions
+- **Interactive Hover Tooltips**: Move from highlighted text into a stable popup to review and apply suggestions
 - **Status Bar Integration**: Quick overview of issues in the current document
 - **Customizable**: Configure Vale path, config file, and visual styles
 
 ## Prerequisites
 
 Before using this plugin, [you need to have Vale installed on your system](https://vale.sh/docs/install) and [configured](https://vale.sh/docs/vale-ini).
+
+The plugin sends editor text to Vale through standard input and associates it with the note's vault-relative path. It does not create temporary copies of your notes. This keeps checking local, preserves path-specific `.vale.ini` rules, and works with strictly confined Vale installations such as Snap.
 
 ## Installation
 
@@ -102,6 +104,10 @@ If Vale runs but finds no issues:
 1. Check your `.vale.ini` configuration
 2. Ensure you have styles installed (`vale sync`)
 3. Verify Vale works from command line: `vale your-file.md`
+
+### Snap installations
+
+Vale installed through Snap can lint editor content because the plugin uses standard input instead of a temporary file. Your Vale configuration and style files must still be in locations that the Snap package is permitted to read. If configuration loading fails, check `snap connections vale` and the location of your vault and `.vale.ini` file.
 
 ### Performance issues
 
