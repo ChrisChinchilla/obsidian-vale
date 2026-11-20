@@ -34,3 +34,10 @@ jobs:
         generateReleaseNotes: true
         artifacts: "main.js,manifest.json,styles.css"
         artifactErrorsFailBuild: true
+
+  blog-post:
+    needs: build
+    uses: ./.github/workflows/release-blog-post.yml
+    secrets: inherit
+    with:
+      tag: ${{ github.ref_name }}

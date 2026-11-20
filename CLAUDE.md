@@ -30,6 +30,16 @@ An Obsidian plugin (`vale-linter`, display name "Vale Linter") that shells out t
 
 Tagging a commit (tag name = plain version, e.g. `2.0.6`, no `v` prefix — matches `manifest.json`'s `version`) and pushing the tag triggers `.github/workflows/release.yml`, which installs deps, runs `npm run build`, verifies the tag matches `manifest.json`'s version (fails the build otherwise), creates a GitHub Release, and attaches `main.js`, `manifest.json`, and `styles.css` as individual release assets — required for BRAT and manual installs to work. `.github/workflows/build.yaml` is a separate CI-only sanity build on push/PR to `main`; it does not publish anything. `.npmrc` sets `tag-version-prefix=` so `npm version <bump>` produces a correctly un-prefixed tag directly (its default `v`-prefixed behavior doesn't match this repo's tag convention). See the `release` skill (`.claude/skills/release/`) for the full step-by-step process, including how to cut a pre-release.
 
+## Release blog post automation
+
+`.github/workflows/release-blog-post.yml` is a **self-contained** workflow: copy the file unchanged into any repo, no dependency on this repo. The only external repo it touches is the website, `ChrisChinchilla/chrischinchilla.com` (local clone: `~/Workspace/Chris Chinchilla/new-site`); site settings (`SITE_REPO`, `SITE_BRANCH`, `POSTS_PATH`, `GUIDANCE_FILES`, `SKIP_PRERELEASE`) are an `env` block at the top of the file.
+
+It fetches the release notes with `gh release view`, checks out the project and the site, runs `anthropics/claude-code-action@v1` (Read/Write/Glob/Grep only, because release notes are untrusted input) to write one post following the site's own `CLAUDE.md` and recent posts, then opens a **draft pull request** on the site repo via `peter-evans/create-pull-request`. The draft PR is the draft state: the site has no `draft` frontmatter flag, so merging publishes. Pre-releases are skipped by default.
+
+- Triggers: `release: published`, `workflow_dispatch` (with a tag) and `workflow_call`. `release.yml` has a `blog-post` job that calls it locally (`uses: ./.github/workflows/release-blog-post.yml`) after `build`, because releases created with `GITHUB_TOKEN` don't fire `release` events. Don't also let the `release` trigger fire for the same release, or it runs twice.
+- Secrets needed in each repo: `CLAUDE_CODE_OAUTH_TOKEN` and `SITE_REPO_TOKEN` (fine-grained PAT, Contents + Pull requests write on the site repo). Not yet configured here.
+- Untested end to end: the first real run will be on the next release tag.
+
 ## Feature roadmap
 
 Compared against two more mature Vale integrations to find gaps worth closing:
