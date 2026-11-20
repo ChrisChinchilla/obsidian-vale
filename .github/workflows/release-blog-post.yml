@@ -82,17 +82,17 @@ jobs:
         env:
           SITE_REPO_TOKEN: ${{ secrets.SITE_REPO_TOKEN }}
         # Fails early with a clear message instead of after the post is drafted.
+        # Probes git's write handshake: the repo API's `permissions` field reflects the
+        # user's role, not the token's scopes, so it can't catch a read-only token.
         run: |
           if [ -z "$SITE_REPO_TOKEN" ]; then
             echo "::error::SITE_REPO_TOKEN secret is empty or missing."; exit 1
           fi
-          resp=$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $SITE_REPO_TOKEN" \
-            "https://api.github.com/repos/$SITE_REPO")
-          code=${resp##*$'\n'}; body=${resp%$'\n'*}
-          echo "GET /repos/$SITE_REPO -> HTTP $code"
-          echo "permissions: $(echo "$body" | jq -c .permissions)"
-          if [ "$code" != "200" ] || [ "$(echo "$body" | jq -r .permissions.push)" != "true" ]; then
-            echo "::error::SITE_REPO_TOKEN cannot push to $SITE_REPO. Needs Contents: write and Pull requests: write on that repo."
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -u "x-access-token:$SITE_REPO_TOKEN" \
+            "https://github.com/$SITE_REPO.git/info/refs?service=git-receive-pack")
+          echo "git-receive-pack handshake on $SITE_REPO -> HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::SITE_REPO_TOKEN cannot push to $SITE_REPO (HTTP $code). It needs Contents: write and Pull requests: write on that repo."
             exit 1
           fi
 

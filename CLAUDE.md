@@ -37,8 +37,8 @@ Tagging a commit (tag name = plain version, e.g. `2.0.6`, no `v` prefix — matc
 It fetches the release notes with `gh release view`, checks out the project and the site, runs the Claude Code CLI directly (`claude -p`, Read/Write/Glob/Grep only, because release notes are untrusted input; `anthropics/claude-code-action` was tried first but rejects `push` events, which a called workflow inherits) to write one post following the site's own `CLAUDE.md` and recent posts, then opens a **draft pull request** on the site repo via `peter-evans/create-pull-request`. The draft PR is the draft state: the site has no `draft` frontmatter flag, so merging publishes. Pre-releases are skipped by default.
 
 - Triggers: `release: published`, `workflow_dispatch` (with a tag) and `workflow_call`. `release.yml` has a `blog-post` job that calls it locally (`uses: ./.github/workflows/release-blog-post.yml`) after `build`, because releases created with `GITHUB_TOKEN` don't fire `release` events. Don't also let the `release` trigger fire for the same release, or it runs twice.
-- Secrets needed in each repo: `CLAUDE_CODE_OAUTH_TOKEN` and `SITE_REPO_TOKEN` (fine-grained PAT, Contents + Pull requests write on the site repo). Not yet configured here.
-- Untested end to end: the first real run will be on the next release tag.
+- Secrets needed in each repo: `CLAUDE_CODE_OAUTH_TOKEN` and `SITE_REPO_TOKEN` (fine-grained PAT, Contents + Pull requests write on the site repo).
+- Verified end to end with release 2.2.1 (draft PR #190 on the site repo).
 
 ## Feature roadmap
 
